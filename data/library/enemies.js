@@ -1,0 +1,104 @@
+/**
+ * Enemy Library
+ */
+(function () {
+    // Bullet Hell Enemies
+    GameData.registerEnemy('fairy', {
+        hp: 5, radius: 12, color: '#f88', score: 100,
+        ai: (me, ctx) => {
+            me.local.y += 2;
+            me.local.x += Math.sin(me.age * 0.05) * 3;
+            if (me.age % 40 === 0) {
+                for (let i = 0; i < 3; i++) {
+                    const angle = me.age * 0.1 + (i * (Math.PI * 2 / 3));
+                    ctx.spawn(GameData.Types.E_BULLET, me.world.x, me.world.y, {
+                        vx: Math.cos(angle) * 2, vy: Math.sin(angle) * 2,
+                        radius: 3, color: '#f0f'
+                    });
+                }
+            }
+        }
+    });
+
+    GameData.registerEnemy('butterfly', {
+        hp: 15, radius: 15, color: '#88f', score: 300,
+        ai: (me, ctx) => {
+            me.local.y += 1;
+            if (me.age % 90 === 0) {
+                const p = ctx.getPlayerPosition();
+                const angle = Math.atan2(p.y - me.world.y, p.x - me.world.x);
+                for (let i = -2; i <= 2; i++) {
+                    ctx.spawn(GameData.Types.E_BULLET, me.world.x, me.world.y, {
+                        vx: Math.cos(angle + i * 0.2) * 3, vy: Math.sin(angle + i * 0.2) * 3,
+                        radius: 4, color: '#0ff'
+                    });
+                }
+            }
+        }
+    });
+
+    // Fantasy Enemies
+    GameData.registerEnemy('mage', {
+        hp: 8, radius: 10, color: '#80f', score: 200,
+        ai: (me, ctx) => {
+            me.local.y += 1.5;
+            if (me.age % 60 === 0) me.local.x += (Math.random() - 0.5) * 100;
+
+            if (me.age % 120 === 0) {
+                const p = ctx.getPlayerPosition();
+                const angle = Math.atan2(p.y - me.world.y, p.x - me.world.x);
+                ctx.spawn(GameData.Types.E_BULLET, me.world.x, me.world.y, {
+                    vx: Math.cos(angle) * 3, vy: Math.sin(angle) * 3,
+                    radius: 5, color: '#ff0', homing: true
+                });
+            }
+        }
+    });
+
+    GameData.registerEnemy('dragon_hatchling', {
+        hp: 20, radius: 20, color: '#0a0', score: 500,
+        ai: (me, ctx) => {
+            me.local.y += 2;
+            if (me.age % 5 === 0) {
+                ctx.spawn(GameData.Types.E_BULLET, me.world.x, me.world.y + 20, {
+                    vx: (Math.random() - 0.5) * 2, vy: 3,
+                    radius: 3, color: '#f80'
+                });
+            }
+        }
+    });
+
+    // Sci-Fi Enemies
+    GameData.registerEnemy('fighter', {
+        hp: 4, radius: 8, color: '#0ff', score: 150,
+        ai: (me, ctx) => {
+            me.local.y += 5;
+            if (me.age % 30 === 0) {
+                ctx.spawn(GameData.Types.E_BULLET, me.world.x, me.world.y, {
+                    vx: 0, vy: 8,
+                    radius: 2, color: '#0f0'
+                });
+            }
+        }
+    });
+
+    GameData.registerEnemy('turret', {
+        hp: 30, radius: 15, color: '#888', score: 400,
+        ai: (me, ctx) => {
+            me.local.y += 0.5;
+            if (me.age % 120 === 0) {
+                const p = ctx.getPlayerPosition();
+                const angle = Math.atan2(p.y - me.world.y, p.x - me.world.x);
+                for (let i = 0; i < 5; i++) {
+                    setTimeout(() => {
+                        if (!me.active) return;
+                        ctx.spawn(GameData.Types.E_BULLET, me.world.x, me.world.y, {
+                            vx: Math.cos(angle) * 6, vy: Math.sin(angle) * 6,
+                            radius: 3, color: '#f00'
+                        });
+                    }, i * 100);
+                }
+            }
+        }
+    });
+})();

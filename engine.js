@@ -68,16 +68,37 @@ const GAME_CONTEXT = {
         return returnEntity ? e : undefined;
     },
     spawnEnemy: (archetype, x, y) => {
-        if (!GameData.CurrentPack) return;
-        const def = GameData.CurrentPack.Enemies[archetype];
+        // 1. Try Current Pack
+        let def = GameData.CurrentPack && GameData.CurrentPack.Enemies ? GameData.CurrentPack.Enemies[archetype] : null;
+        // 2. Try Global Library
+        if (!def) def = GameData.Library.Enemies[archetype];
+
         if (!def) return;
         const e = new Entity(GameData.Types.ENEMY, x, y);
         Object.assign(e, def);
         ENTITIES.push(e);
     },
-    spawnBoss: (x, y) => {
-        if (!GameData.CurrentPack) return;
-        const def = GameData.CurrentPack.Boss;
+    spawnBoss: (archetype, x, y) => {
+        // Handle legacy call (x, y)
+        if (typeof archetype === 'number') {
+            y = x; x = archetype;
+            if (GameData.CurrentPack && GameData.CurrentPack.Boss) {
+                const def = GameData.CurrentPack.Boss;
+                const e = new Entity(GameData.Types.BOSS, x, y);
+                Object.assign(e, def);
+                if (def.grid) e.grid = JSON.parse(JSON.stringify(def.grid));
+                ENTITIES.push(e);
+                if (def.init) def.init(e, GAME_CONTEXT);
+            }
+            return;
+        }
+
+        // ID based lookup
+        let def = GameData.CurrentPack && GameData.CurrentPack.Bosses ? GameData.CurrentPack.Bosses[archetype] : null;
+        if (!def) def = GameData.Library.Bosses[archetype];
+
+        if (!def) return;
+
         const e = new Entity(GameData.Types.BOSS, x, y);
         Object.assign(e, def);
         if (def.grid) e.grid = JSON.parse(JSON.stringify(def.grid));
@@ -86,6 +107,15 @@ const GAME_CONTEXT = {
     },
     spawnParticle: (x, y, c, n) => spawnParticle(x, y, c, n),
     addChild: (parent, child) => parent.addChild(child),
+    spawnBullet: (id, x, y, props) => {
+        const def = GameData.Library.Bullets[id];
+        if (!def) return;
+        const b = new Entity(def.type || GameData.Types.E_BULLET, x, y);
+        Object.assign(b, def);
+        if (props) Object.assign(b, props);
+        ENTITIES.push(b);
+        return b;
+    },
     getPlayerPosition: () => PLAYER ? ({ x: PLAYER.world.x, y: PLAYER.world.y }) : { x: 0, y: 0 }
 };
 
@@ -129,13 +159,29 @@ function spawnPlayer() {
 
 function updateStage() {
     STAGE.timer++;
-    const currentScript = STAGE.scripts[STAGE.waveId];
+    let currentScript = STAGE.scripts[STAGE.waveId];
+
+    // Resolve from Library if string
+    if (typeof currentScript === 'string') {
+        currentScript = GameData.Library.Scripts[currentScript];
+        // Cache it? Or just use it. For now just use it.
+        // But we need to handle duration and update.
+        // If it's a string in the array, we can't easily replace it in place without mutating the original pack data which might be bad if we restart.
+        // Better to resolve it once when wave starts?
+        // Let's resolve it here dynamically.
+    }
+
+    if (!currentScript) return; // Should not happen
 
     if (STAGE.timer > currentScript.duration && STAGE.waveId < STAGE.scripts.length - 1) {
         STAGE.waveId++;
         STAGE.timer = 0;
-        if (STAGE.scripts[STAGE.waveId].onStart) {
-            STAGE.scripts[STAGE.waveId].onStart(GAME_CONTEXT);
+
+        let nextScript = STAGE.scripts[STAGE.waveId];
+        if (typeof nextScript === 'string') nextScript = GameData.Library.Scripts[nextScript];
+
+        if (nextScript && nextScript.onStart) {
+            nextScript.onStart(GAME_CONTEXT);
         }
         showStatus(`WAVE ${STAGE.waveId + 1}`);
     }
@@ -156,11 +202,48 @@ function showStatus(text) {
     }
 }
 
-function getTerrainAt(wx, wy) {
+function getTerrainConfig() {
+    let t = STAGE.scripts[STAGE.waveId].Terrain;
+    if (typeof t === 'string') {
+        t = GameData.Library.Terrains[t];
+    }
+    return t || {
+        Background: { type: 'noise2d', scale: 0.02, threshold: 0.6, color: '#222' },
+        Ground: { type: 'noise2d', scale: 0.05, threshold: 0.8, color: '#555' },
+        Walls: []
+    };
+}
+
+function checkCollision(wx, wy) {
+    const config = getTerrainConfig();
     const ny = wy - SCROLL_Y;
-    const thresh = STAGE.scripts[STAGE.waveId].terrainThreshold || 0.7;
-    const n = Noise.get(wx, ny);
-    return n > thresh;
+
+    // 1. Ground (2D Noise)
+    if (config.Ground) {
+        const n = Noise.get(wx * config.Ground.scale, ny * config.Ground.scale);
+        if (n > config.Ground.threshold) return true;
+    }
+
+    // 2. Walls (1D Noise)
+    if (config.Walls) {
+        for (let w of config.Walls) {
+            // Noise.get(x, y) -> use y for 1D noise along vertical axis
+            const n = Noise.get(0, ny * w.freq);
+            // Map -1..1 to 0..1? Noise.get returns 0..1 usually in this implementation? 
+            // Let's check utils.js later. Assuming 0..1 for now based on previous usage.
+            // Actually previous usage was simple threshold.
+
+            const offset = (n * w.amp) + w.offset;
+
+            if (w.side === 'left') {
+                if (wx < offset) return true;
+            } else if (w.side === 'right') {
+                if (wx > 600 - offset) return true;
+            }
+        }
+    }
+
+    return false;
 }
 
 function gameLoop() {
@@ -172,10 +255,14 @@ function gameLoop() {
         renderTitle();
     } else if (CURRENT_STATE === STATE.PLAY) {
         updateGame();
-        renderGame();
+        renderBackground(); // New: Render non-colliding bg
+        renderTerrain();    // New: Render colliding terrain
+        renderGame();       // Entities
         renderUI();
     } else if (CURRENT_STATE === STATE.GAMEOVER) {
-        renderGame(); // Show background
+        renderBackground();
+        renderTerrain();
+        renderGame();
         renderGameOver();
     }
 
@@ -255,9 +342,9 @@ function updateGame() {
     }
 
     bullets.forEach(b => {
-        if (getTerrainAt(b.world.x, b.world.y)) {
+        if (checkCollision(b.world.x, b.world.y)) {
             b.active = false;
-            Noise.set(b.world.x, b.world.y - SCROLL_Y, 0);
+            // Noise.set(b.world.x, b.world.y - SCROLL_Y, 0); // Disable terrain destruction for now
             spawnParticle(b.world.x, b.world.y, '#888', 2);
         }
 
@@ -286,7 +373,7 @@ function updateGame() {
 
     if (PLAYER && PLAYER.active) {
         // Player vs Terrain
-        if (getTerrainAt(PLAYER.world.x, PLAYER.world.y)) {
+        if (checkCollision(PLAYER.world.x, PLAYER.world.y)) {
             playerHit();
         }
         // Player vs Enemy/Bullet
@@ -303,6 +390,8 @@ function updateGame() {
     ENTITIES = ENTITIES.filter(e => e.active);
     updateParticles();
 }
+
+// --- Rendering ---
 
 function playerHit() {
     spawnExplosion(PLAYER.world.x, PLAYER.world.y);
@@ -409,18 +498,68 @@ function resolveBossHit(boss, bullet) {
     return false;
 }
 
-// --- Rendering ---
-function renderGame() {
-    // Terrain
-    CTX.fillStyle = '#444';
+function renderBackground() {
+    const config = getTerrainConfig();
+    if (!config.Background) return;
+
+    CTX.fillStyle = config.Background.color;
+    const scale = config.Background.scale;
+    const thresh = config.Background.threshold;
+
+    // Optimization: Render lower resolution for background?
+    // For now, keep 10px grid
     for (let y = 0; y < 800; y += 10) {
+        const ny = (y - SCROLL_Y) * scale;
         for (let x = 0; x < 600; x += 10) {
-            if (getTerrainAt(x, y)) {
-                CTX.fillRect(x, y, 9, 9);
+            const nx = x * scale;
+            if (Noise.get(nx, ny) > thresh) {
+                CTX.fillRect(x, y, 10, 10);
+            }
+        }
+    }
+}
+
+function renderTerrain() {
+    const config = getTerrainConfig();
+
+    // Ground
+    if (config.Ground) {
+        CTX.fillStyle = config.Ground.color;
+        const scale = config.Ground.scale;
+        const thresh = config.Ground.threshold;
+
+        for (let y = 0; y < 800; y += 10) {
+            const ny = (y - SCROLL_Y) * scale;
+            for (let x = 0; x < 600; x += 10) {
+                const nx = x * scale;
+                if (Noise.get(nx, ny) > thresh) {
+                    CTX.fillRect(x, y, 10, 10);
+                }
             }
         }
     }
 
+    // Walls
+    if (config.Walls) {
+        for (let w of config.Walls) {
+            CTX.fillStyle = w.color;
+            for (let y = 0; y < 800; y += 10) {
+                const ny = (y - SCROLL_Y) * w.freq;
+                const n = Noise.get(0, ny);
+                const offset = (n * w.amp) + w.offset;
+
+                if (w.side === 'left') {
+                    CTX.fillRect(0, y, offset, 10);
+                } else if (w.side === 'right') {
+                    CTX.fillRect(600 - offset, y, offset, 10);
+                }
+            }
+        }
+    }
+}
+
+function renderGame() {
+    // Entities only now
     ENTITIES = ENTITIES.filter(e => e.active);
     ENTITIES.forEach(e => drawEntity(e));
 

@@ -13,10 +13,37 @@ const GameData = {
         EFFECT: 7
     },
     Packs: {}, // Registry for Game Packs (Genres)
+    Library: { // Shared Data Library
+        Enemies: {},
+        Bosses: {},
+        Bullets: {},
+        Terrains: {},
+        Scripts: {}
+    },
     CurrentPack: null,
 
     registerPack: (name, data) => {
         GameData.Packs[name] = data;
+    },
+
+    registerEnemy: (id, def) => {
+        GameData.Library.Enemies[id] = def;
+    },
+
+    registerBoss: (id, def) => {
+        GameData.Library.Bosses[id] = def;
+    },
+
+    registerBullet: (id, def) => {
+        GameData.Library.Bullets[id] = def;
+    },
+
+    registerTerrain: (id, def) => {
+        GameData.Library.Terrains[id] = def;
+    },
+
+    registerScript: (id, def) => {
+        GameData.Library.Scripts[id] = def;
     },
 
     loadPack: (name) => {
