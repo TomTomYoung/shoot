@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>STG Model V2.1: Terrain & Waves</title>
+    <style>
+        body {
+            background: #111;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            color: #ccc;
+            font-family: monospace;
+            overflow: hidden;
+        }
+        canvas {
+            background: #000;
+            border: 1px solid #444;
+            box-shadow: 0 0 30px rgba(0,255,0,0.1);
+        }
+        #ui {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            pointer-events: none;
+            text-shadow: 1px 1px 0 #000;
+        }
+    </style>
+</head>
+<body>
+
+<div id="ui">
+    <h1 style="color:#0f0;">STG Model V2.1</h1>
+    <div>WASD/Arrows: Move | Z: Shot | Shift: Slow</div>
+    <div id="status"></div>
+    <div id="debug"></div>
+</div>
+<canvas id="gameCanvas" width="600" height="800"></canvas>
+
+<script>
+/**
+ * STG Model V2.1 Implementation
+ * - Terrain (Noise-based Wall Field)
+ * - Spawner Entities
+ * - Wave Management (Stage Script)
+ */
+
+// --- 0. Math & Noise Library ---
+const Mat3 = {
+    identity: () => [1,0,0,0,1,0,0,0,1],
+    multiply: (a, b) => {
+        const out = new Array(9);
+        for(let r=0;r<3;r++) for(let c=0;c<3;c++)
+            out[r*3+c] = a[r*3+0]*b[0*3+c] + a[r*3+1]*b[1*3+c] + a[r*3+2]*b[2*3+c];
+        return out;
+    },
+    translation: (x, y) => [1,0,x, 0,1,y, 0,0,1],
+    rotation: (rad) => [Math.cos(rad),-Math.sin(rad),0, Math.sin(rad),Math.cos(rad),0, 0,0,1],
+    invert: (m) => {
+        const [a,b,c,d,e,f] = m; 
+        const det = a*e - b*d;
+        if(Math.abs(det)<1e-6) return null;
+        const iDet = 1/det;
+        return [e*iDet, -b*iDet, (b*f-c*e)*iDet, -d*iDet, a*iDet, (c*d-a*f)*iDet, 0,0,1];
+    },
+    transform: (m, x, y) => ({x: m[0]*x+m[1]*y+m[2], y: m[3]*x+m[4]*y+m[5]})
+};
+
+// Simple Pseudo-Noise for Terrain
+// (Deterministic random based on coordinates)
+const Noise = {
+    map: new Map(), // Dynamic changes (destruction)
+    seed: Math.random() * 100,
+    get: (x, y) => {
+        // Quantize coordinates to "Dots"
+        const qx = Math.floor(x / 10);
+        const qy = Math.floor(y / 10);
+        const key = `${qx},${qy}`;
+        
+        // Check dynamic map (destruction)
+        if (Noise.map.has(key)) return Noise.map.get(key);
+
+        // Procedural generation
+        const s = Math.sin(qx * 12.9898 + qy * 78.233 + Noise.seed) * 43758.5453;
+        return s - Math.floor(s); // 0.0 - 1.0
+    },
+    set: (x, y, val) => {
+        const qx = Math.floor(x / 10);
+        const qy = Math.floor(y / 10);
+        Noise.map.set(`${qx},${qy}`, val);
+    }
+};
+
+// --- 1. Game Constants & Types ---
+const CANVAS = document.getElementById('gameCanvas');
+const CTX = CANVAS.getContext('2d');
+const INPUT = { x:0, y:0, shot:false, slow:false };
+
+const TYPE = { PLAYER:0, ENEMY:1, P_BULLET:2, E_BULLET:3, SPAWNER:4, BOSS:5 };
+
+// --- 2. Entity System ---
+class Entity {
+    constructor(type, x, y) {
+        this.id = Math.random().toString(36).substr(2,9);
+        this.type = type;
+        this.active = true;
+        
+        this.local = { x, y, angle: 0 };
+        this.world = { x, y, matrix: Mat3.identity() };
+        
+        this.parent = null;
+        this.children = [];
+        
+        this.hp = 10;
+        this.age = 0;
+        this.radius = 5;
+        this.grid = null; // For boss/blocks
+    }
+    
+    addChild(child) {
+        child.parent = this;
+        this.children.push(child);
+    }
+}
+
+let ENTITIES = [];
+let PARTICLES = [];
+let SCROLL_Y = 0; // Global scroll
+
+// --- 3. Stage & Wave System (The Theory Implementation) ---
+const STAGE = {
+    waveId: 0,
+    timer: 0,
+    state: 'intro', // intro, wave, boss_warning, boss
+    
+    // Wave Definitions
+    scripts: [
+        {   // Wave 0: Intro / Asteroid Field
+            duration: 300,
+            terrainThreshold: 0.65, // Dense
+            update: (t) => {
+                if(t % 60 === 0) spawnEnemy('zako', Math.random()*500+50, -20);
+            }
+        },
+        {   // Wave 1: Spawner Attack
+            duration: 500,
+            terrainThreshold: 0.8, // Open
+            onStart: () => {
+                // Spawn 2 Spawners
+                spawnEntity(TYPE.SPAWNER, 100, 100);
+                spawnEntity(TYPE.SPAWNER, 500, 100);
+            },
+            update: (t) => {
+                // Determine scrolling speed or background events
+            }
+        },
+        {   // Wave 2: Boss
+            duration: 99999,
+            terrainThreshold: 0.95, // Very Open
+            onStart: () => {
+                spawnBoss(300, -100);
+            },
+            update: (t) => {} // Boss logic handles itself
+        }
+    ]
+};
+
+function updateStage() {
+    STAGE.timer++;
+    const currentScript = STAGE.scripts[STAGE.waveId];
+
+    // Wave Transition Logic
+    if (STAGE.timer > currentScript.duration && STAGE.waveId < STAGE.scripts.length - 1) {
+        STAGE.waveId++;
+        STAGE.timer = 0;
+        // Init next wave
+        if (STAGE.scripts[STAGE.waveId].onStart) {
+            STAGE.scripts[STAGE.waveId].onStart();
+        }
+        // Visual Notification
+        const div = document.getElementById('status');
+        div.innerText = `WAVE ${STAGE.waveId + 1}`;
+        div.style.color = '#fff';
+        setTimeout(() => div.innerText = '', 2000);
+    }
+
+    // Run Wave Script
+    if (currentScript.update) {
+        currentScript.update(STAGE.timer);
+    }
+
+    // Scroll Logic
+    SCROLL_Y += 1; // Constant scroll
+}
+
+// --- 4. Logic & Spawner ---
+
+function spawnEntity(type, x, y) {
+    const e = new Entity(type, x, y);
+    if(type === TYPE.SPAWNER) {
+        e.hp = 50;
+        e.radius = 20;
+        e.color = '#f0f';
+    } else if (type === TYPE.ENEMY) {
+        e.hp = 3;
+        e.radius = 10;
+        e.color = '#f88';
+    }
+    ENTITIES.push(e);
+    return e;
+}
+
+function spawnEnemy(archetype, x, y) {
+    const e = spawnEntity(TYPE.ENEMY, x, y);
+    e.ai = (me) => {
+        me.local.y += 3;
+        me.local.x += Math.sin(me.age * 0.1) * 2;
+        // Shoot
+        if(me.age % 60 === 0) {
+            const b = new Entity(TYPE.E_BULLET, me.world.x, me.world.y);
+            b.vx = (player.world.x - me.world.x) * 0.01;
+            b.vy = (player.world.y - me.world.y) * 0.01;
+            ENTITIES.push(b);
+        }
+    };
+}
+
+function updateSpawner(s) {
+    // Rotate visual
+    s.local.angle += 0.05;
+    
+    // Logic: Spawn enemy every 120 frames
+    if (s.age % 120 === 0) {
+        spawnEnemy('zako', s.world.x, s.world.y + 20);
+        // Effect
+        spawnParticle(s.world.x, s.world.y, '#f0f', 5);
+    }
+}
+
+// Terrain Function (The Dot Field)
+function getTerrainAt(wx, wy) {
+    // Scroll offset applied to Y for noise sampling
+    // We want terrain to move DOWN, so we sample Y - SCROLL
+    const ny = wy - SCROLL_Y;
+    
+    // Threshold depends on Wave
+    const thresh = STAGE.scripts[STAGE.waveId].terrainThreshold || 0.7;
+    
+    const n = Noise.get(wx, ny);
+    return n > thresh;
+}
+
+// --- 5. Main Loop & Hierarchy ---
+
+const player = new Entity(TYPE.PLAYER, 300, 700);
+player.radius = 4;
+ENTITIES.push(player);
+
+function gameLoop() {
+    // A. Mode & Stage Step
+    updateStage();
+
+    // B. Logic Step (Local)
+    const speed = INPUT.slow ? 2 : 5;
+    player.local.x += INPUT.x * speed;
+    player.local.y += INPUT.y * speed;
+    player.local.x = Math.max(0, Math.min(600, player.local.x));
+    player.local.y = Math.max(0, Math.min(800, player.local.y));
+
+    if(INPUT.shot && player.age % 4 === 0) {
+        const b = new Entity(TYPE.P_BULLET, player.world.x, player.world.y - 10);
+        b.vy = -15;
+        ENTITIES.push(b);
+    }
+    player.age++;
+
+    ENTITIES.forEach(e => {
+        e.age++;
+        if(e.type === TYPE.E_BULLET) { e.local.x += e.vx; e.local.y += e.vy; }
+        if(e.type === TYPE.P_BULLET) { e.local.y += e.vy; }
+        if(e.type === TYPE.ENEMY && e.ai) e.ai(e);
+        if(e.type === TYPE.SPAWNER) updateSpawner(e);
+        if(e.type === TYPE.BOSS) updateBoss(e);
+    });
+
+    // C. Hierarchy Step (World)
+    const updateMatrix = (e, pMat) => {
+        const T = Mat3.translation(e.local.x, e.local.y);
+        const R = Mat3.rotation(e.local.angle);
+        const local = Mat3.multiply(T, R);
+        e.world.matrix = Mat3.multiply(pMat, local);
+        const pos = Mat3.transform(e.world.matrix, 0, 0);
+        e.world.x = pos.x; e.world.y = pos.y;
+        e.children.forEach(c => updateMatrix(c, e.world.matrix));
+    };
+    ENTITIES.filter(e => !e.parent).forEach(e => updateMatrix(e, Mat3.identity()));
+
+    // D. Collision Step
+    // 1. Bullet vs Entity
+    const bullets = ENTITIES.filter(e => e.type === TYPE.P_BULLET && e.active);
+    const targets = ENTITIES.filter(e => (e.type === TYPE.ENEMY || e.type === TYPE.SPAWNER || e.type === TYPE.BOSS) && e.active);
+
+    bullets.forEach(b => {
+        // vs Terrain
+        if (getTerrainAt(b.world.x, b.world.y)) {
+            b.active = false;
+            Noise.set(b.world.x, b.world.y - SCROLL_Y, 0); // Dig hole
+            spawnParticle(b.world.x, b.world.y, '#888', 2);
+        }
+
+        // vs Enemy
+        targets.forEach(t => {
+            const dx = b.world.x - t.world.x;
+            const dy = b.world.y - t.world.y;
+            if(dx*dx + dy*dy < (t.radius + 5)**2) { // Simple circle
+                // If boss, check grid (omitted for brevity, same as previous)
+                if(t.type === TYPE.BOSS) {
+                   if(resolveBossHit(t, b)) b.active = false;
+                } else {
+                   t.hp--;
+                   b.active = false;
+                   spawnParticle(t.world.x, t.world.y, '#fff');
+                   if(t.hp <= 0) {
+                       t.active = false;
+                       spawnExplosion(t.world.x, t.world.y);
+                   }
+                }
+            }
+        });
+        
+        if(b.world.y < 0) b.active = false;
+    });
+
+    // 2. Player vs Terrain
+    if (getTerrainAt(player.world.x, player.world.y)) {
+        // Damage or Push back
+        spawnParticle(player.world.x, player.world.y, '#f00');
+    }
+
+    // E. Render
+    CTX.fillStyle = '#000';
+    CTX.fillRect(0,0,600,800);
+
+    // Draw Terrain (Dot Field)
+    CTX.fillStyle = '#444';
+    // Optimization: Only draw roughly
+    for(let y=0; y<800; y+=10) {
+        for(let x=0; x<600; x+=10) {
+            if(getTerrainAt(x, y)) {
+                CTX.fillRect(x, y, 9, 9);
+            }
+        }
+    }
+
+    ENTITIES = ENTITIES.filter(e => e.active);
+    ENTITIES.forEach(e => drawEntity(e));
+
+    // Particles
+    updateParticles();
+
+    requestAnimationFrame(gameLoop);
+}
+
+// --- 5.5 Boss & Utils ---
+function spawnBoss(x, y) {
+    const boss = spawnEntity(TYPE.BOSS, x, y);
+    boss.hp = 1000;
+    boss.radius = 50;
+    boss.grid = {
+        rows:5, cols:5, size:20,
+        cells: [
+            [null, {hp:50,c:'#888'}, null, {hp:50,c:'#888'}, null],
+            [{hp:50,c:'#888'}, {hp:20,c:'#f0f'}, {hp:50,c:'#888'}, {hp:20,c:'#f0f'}, {hp:50,c:'#888'}],
+            [null, {hp:50,c:'#888'}, {hp:100,c:'#f00',core:true}, {hp:50,c:'#888'}, null], // Core
+            [null, {hp:50,c:'#888'}, null, {hp:50,c:'#888'}, null],
+            [null, null, {hp:50,c:'#888'}, null, null],
+        ]
+    };
+    // Bits
+    const b1 = new Entity(TYPE.ENEMY, -60, 0); b1.radius=10; boss.addChild(b1);
+    const b2 = new Entity(TYPE.ENEMY, 60, 0); b2.radius=10; boss.addChild(b2);
+}
+
+function updateBoss(b) {
+    if(b.local.y < 200) b.local.y += 1; // Entry
+    b.local.x = 300 + Math.sin(b.age*0.01)*100;
+    b.local.angle = Math.sin(b.age*0.02)*0.1;
+    b.children.forEach(c => c.local.angle += 0.1);
+}
+
+function resolveBossHit(boss, bullet) {
+    // Inverse Matrix Transform for Grid Hit (Same as V2.0)
+    const inv = Mat3.invert(boss.world.matrix);
+    if(!inv) return false;
+    const lp = Mat3.transform(inv, bullet.world.x, bullet.world.y);
+    
+    // Grid coords (Center offset)
+    const gx = lp.x + (boss.grid.cols*boss.grid.size)/2;
+    const gy = lp.y + (boss.grid.rows*boss.grid.size)/2;
+    const c = Math.floor(gx/boss.grid.size);
+    const r = Math.floor(gy/boss.grid.size);
+    
+    if(r>=0 && r<boss.grid.rows && c>=0 && c<boss.grid.cols) {
+        const cell = boss.grid.cells[r][c];
+        if(cell) {
+            cell.hp--;
+            spawnParticle(bullet.world.x, bullet.world.y, '#ff0');
+            if(cell.hp<=0) {
+                boss.grid.cells[r][c] = null;
+                spawnExplosion(bullet.world.x, bullet.world.y);
+                if(cell.core) {
+                    boss.active = false;
+                    spawnExplosion(boss.world.x, boss.world.y);
+                    document.getElementById('status').innerText = "BOSS DESTROYED";
+                }
+            }
+            return true;
+        }
+    }
+    return false;
+}
+
+function drawEntity(e) {
+    CTX.save();
+    const m = e.world.matrix;
+    CTX.transform(m[0], m[3], m[1], m[4], m[2], m[5]);
+
+    if(e.type === TYPE.PLAYER) {
+        CTX.fillStyle = '#0ff';
+        CTX.beginPath(); CTX.moveTo(0,-10); CTX.lineTo(8,8); CTX.lineTo(-8,8); CTX.fill();
+    } else if (e.type === TYPE.SPAWNER) {
+        CTX.strokeStyle = '#f0f';
+        CTX.lineWidth = 2;
+        CTX.strokeRect(-15,-15,30,30);
+        CTX.fillStyle = `hsl(${e.age*5}, 100%, 50%)`;
+        CTX.beginPath(); CTX.arc(0,0,10,0,Math.PI*2); CTX.fill();
+    } else if (e.type === TYPE.BOSS) {
+        // Grid Draw
+        const g = e.grid;
+        const hw = (g.cols*g.size)/2, hh = (g.rows*g.size)/2;
+        CTX.translate(-hw, -hh);
+        for(let r=0;r<g.rows;r++) for(let c=0;c<g.cols;c++) {
+            const cell = g.cells[r][c];
+            if(cell) {
+                CTX.fillStyle = cell.c;
+                CTX.fillRect(c*g.size, r*g.size, g.size-1, g.size-1);
+            }
+        }
+    } else if (e.type === TYPE.ENEMY) {
+        CTX.fillStyle = '#f88';
+        CTX.beginPath(); CTX.arc(0,0,e.radius,0,Math.PI*2); CTX.fill();
+    } else if (e.type === TYPE.E_BULLET) {
+        CTX.fillStyle = '#ff0';
+        CTX.beginPath(); CTX.arc(0,0,4,0,Math.PI*2); CTX.fill();
+    } else if (e.type === TYPE.P_BULLET) {
+        CTX.fillStyle = '#fff';
+        CTX.fillRect(-2,-8,4,16);
+    }
+    CTX.restore();
+}
+
+function updateParticles() {
+    for(let i=PARTICLES.length-1; i>=0; i--) {
+        const p = PARTICLES[i];
+        p.x += p.vx; p.y += p.vy;
+        p.life--;
+        CTX.fillStyle = p.color;
+        CTX.fillRect(p.x, p.y, 2, 2);
+        if(p.life <= 0) PARTICLES.splice(i,1);
+    }
+}
+function spawnParticle(x, y, c, n=1) {
+    for(let i=0;i<n;i++) PARTICLES.push({x,y,vx:(Math.random()-.5)*5,vy:(Math.random()-.5)*5,life:20,color:c});
+}
+function spawnExplosion(x, y) { spawnParticle(x,y,'#fa0',30); }
+
+// Input
+window.addEventListener('keydown', e => {
+    if(e.key==='ArrowUp') INPUT.y=-1; if(e.key==='ArrowDown') INPUT.y=1;
+    if(e.key==='ArrowLeft') INPUT.x=-1; if(e.key==='ArrowRight') INPUT.x=1;
+    if(e.key==='z') INPUT.shot=true; if(e.key==='Shift') INPUT.slow=true;
+});
+window.addEventListener('keyup', e => {
+    if(e.key==='ArrowUp'||e.key==='ArrowDown') INPUT.y=0;
+    if(e.key==='ArrowLeft'||e.key==='ArrowRight') INPUT.x=0;
+    if(e.key==='z') INPUT.shot=false; if(e.key==='Shift') INPUT.slow=false;
+});
+
+gameLoop();
+
+</script>
+</body>
+</html>
