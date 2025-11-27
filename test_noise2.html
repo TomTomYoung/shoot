@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>Noise Algorithms History</title>
+    <style>
+        body { font-family: monospace; background: #111; color: #eee; text-align: center; }
+        .container { display: flex; flex-wrap: wrap; justify-content: center; gap: 20px; }
+        .card { background: #222; padding: 10px; border-radius: 8px; }
+        canvas { border: 1px solid #555; image-rendering: pixelated; }
+        h3 { margin: 5px 0 10px 0; font-size: 14px; color: #aaa; }
+    </style>
+</head>
+<body>
+    <h1>Procedural Noise History</h1>
+    <div class="container">
+        <div class="card">
+            <h3>1. Smooth Value Noise</h3>
+            <canvas id="c_value" width="200" height="200"></canvas>
+            <div>値を補間</div>
+        </div>
+        <div class="card">
+            <h3>2. Perlin Noise</h3>
+            <canvas id="c_perlin" width="200" height="200"></canvas>
+            <div>勾配を補間</div>
+        </div>
+        <div class="card">
+            <h3>3. Worley (Cellular) Noise</h3>
+            <canvas id="c_worley" width="200" height="200"></canvas>
+            <div>点への距離</div>
+        </div>
+        <div class="card">
+            <h3>4. Simplex Noise (2D)</h3>
+            <canvas id="c_simplex" width="200" height="200"></canvas>
+            <div>三角形グリッド</div>
+        </div>
+        <div class="card">
+            <h3>5. Curl Noise</h3>
+            <canvas id="c_curl" width="200" height="200"></canvas>
+            <div>流体・渦 (ベクトル)</div>
+        </div>
+    </div>
+
+<script>
+// ==========================================
+// 共通ユーティリティ (乱数・ベクトル処理)
+// ==========================================
+const Utils = {
+    // 擬似乱数 (Determinictic Random)
+    fract: (x) => x - Math.floor(x),
+    hash: (x) => {
+        x = Math.sin(x * 12.9898) * 43758.5453;
+        return x - Math.floor(x);
+    },
+    hash2: (x, y) => {
+        return Utils.fract(Math.sin(x * 12.9898 + y * 78.233) * 43758.5453);
+    },
+    // 線形補間
+    mix: (a, b, t) => a * (1 - t) + b * t,
+    // スムーズな補間 (3次エルミート)
+    smoothstep: (t) => t * t * (3 - 2 * t),
+    
+    // ランダムな勾配ベクトル (Perlin用)
+    grad: (x, y) => {
+        const h = Utils.hash2(x, y) * 2 * Math.PI;
+        return { x: Math.cos(h), y: Math.sin(h) };
+    }
+};
+
+const Noise = {
+    // ==========================================
+    // 1. Value Noise (Smooth)
+    // 格子点の「値」を乱数で決め、間を補間する
+    // ==========================================
+    value: (x, y) => {
+        const i = Math.floor(x);
+        const j = Math.floor(y);
+        const f = { x: x - i, y: y - j };
+
+        // 4隅のランダム値を取得
+        const a = Utils.hash2(i, j);
+        const b = Utils.hash2(i + 1, j);
+        const c = Utils.hash2(i, j + 1);
+        const d = Utils.hash2(i + 1, j + 1);
+
+        // スムーズに補間
+        const u = { x: Utils.smoothstep(f.x), y: Utils.smoothstep(f.y) };
+
+        // 横方向の補間 -> 縦方向の補間
+        return Utils.mix(
+            Utils.mix(a, b, u.x),
+            Utils.mix(c, d, u.x),
+            u.y
+        );
+    },
+
+    // ==========================================
+    // 2. Perlin Noise
+    // 格子点の「勾配(ベクトル)」を決め、内積を補間する
+    // ==========================================
+    perlin: (x, y) => {
+        const i = Math.floor(x);
+        const j = Math.floor(y);
+        const f = { x: x - i, y: y - j };
+
+        // 4隅の勾配ベクトルとの内積を計算
+        const dot = (ix, iy, fx, fy) => {
+            const g = Utils.grad(ix, iy);
+            return g.x * fx + g.y * fy;
+        };
+
+        const a = dot(i, j,     f.x,     f.y);
+        const b = dot(i+1, j,   f.x - 1, f.y);
+        const c = dot(i, j+1,   f.x,     f.y - 1);
+        const d = dot(i+1, j+1, f.x - 1, f.y - 1);
+
+        const u = { x: Utils.smoothstep(f.x), y: Utils.smoothstep(f.y) };
+
+        // 0.0-1.0の範囲に正規化して返す (+0.5で調整)
+        return Utils.mix(
+            Utils.mix(a, b, u.x),
+            Utils.mix(c, d, u.x),
+            u.y
+        ) * 0.5 + 0.5;
+    },
+
+    // ==========================================
+    // 3. Worley Noise (Cellular)
+    // 最寄りの特徴点までの距離を使う
+    // ==========================================
+    worley: (x, y) => {
+        const i = Math.floor(x);
+        const j = Math.floor(y);
+        const f = { x: x - i, y: y - j };
+
+        let minDist = 1.0;
+
+        // 周囲3x3のグリッドセルを確認
+        for (let yOff = -1; yOff <= 1; yOff++) {
+            for (let xOff = -1; xOff <= 1; xOff++) {
+                // そのセルの特徴点（ランダムな位置）
+                const point = {
+                    x: xOff + Utils.hash2(i + xOff, j + yOff),
+                    y: yOff + Utils.hash2(i + xOff + 123, j + yOff + 456) // 異なるシード
+                };
+                
+                // 現在地から特徴点までの距離
+                const vec = { x: point.x - f.x, y: point.y - f.y };
+                const dist = Math.sqrt(vec.x * vec.x + vec.y * vec.y);
+
+                minDist = Math.min(minDist, dist);
+            }
+        }
+        return 1.0 - minDist; // 反転して明るくする
+    },
+
+    // ==========================================
+    // 4. Simplex Noise (2D)
+    // 正方形ではなく正三角形のグリッドを使う（計算の軽量化・等方性）
+    // ==========================================
+    simplex: (x, y) => {
+        // 歪み係数
+        const F2 = 0.5 * (Math.sqrt(3.0) - 1.0);
+        const G2 = (3.0 - Math.sqrt(3.0)) / 6.0;
+
+        // 歪んだ空間での座標
+        const s = (x + y) * F2;
+        const i = Math.floor(x + s);
+        const j = Math.floor(y + s);
+
+        const t = (i + j) * G2;
+        const X0 = i - t;
+        const Y0 = j - t;
+        const x0 = x - X0;
+        const y0 = y - Y0;
+
+        // どの三角形の中にいるか判定
+        let i1, j1;
+        if (x0 > y0) { i1 = 1; j1 = 0; } else { i1 = 0; j1 = 1; }
+
+        const x1 = x0 - i1 + G2;
+        const y1 = y0 - j1 + G2;
+        const x2 = x0 - 1.0 + 2.0 * G2;
+        const y2 = y0 - 1.0 + 2.0 * G2;
+
+        // 各頂点からの寄与を計算
+        const contrib = (ix, iy, dx, dy) => {
+            let t = 0.5 - dx*dx - dy*dy;
+            if (t < 0) return 0;
+            t *= t;
+            const g = Utils.grad(ix, iy);
+            return t * t * (g.x * dx + g.y * dy);
+        };
+
+        const n0 = contrib(i, j, x0, y0);
+        const n1 = contrib(i + i1, j + j1, x1, y1);
+        const n2 = contrib(i + 1, j + 1, x2, y2);
+
+        return 40.0 * (n0 + n1 + n2) * 0.5 + 0.5;
+    },
+
+    // ==========================================
+    // 5. Curl Noise
+    // パーリンノイズの偏微分を使って「回転」を作る
+    // ※ここでは渦を描画するために、ベクトル場を色で表現します
+    // ==========================================
+    curl: (x, y) => {
+        const eps = 0.01; // 微小距離
+        // 偏微分（変化の割合）を近似計算
+        const n1 = Noise.perlin(x, y + eps);
+        const n2 = Noise.perlin(x, y - eps);
+        const n3 = Noise.perlin(x + eps, y);
+        const n4 = Noise.perlin(x - eps, y);
+
+        // dx/dy, -dx/dx で回転成分を作る
+        const dx = (n1 - n2) / (2 * eps);
+        const dy = (n3 - n4) / (2 * eps);
+        
+        // ベクトル (dy, -dx) がCurlベクトル
+        // ここでは可視化のため角度を0-1に正規化して返す
+        const angle = Math.atan2(-dx, dy);
+        return (angle + Math.PI) / (2 * Math.PI); 
+    }
+};
+
+// ==========================================
+// 描画処理
+// ==========================================
+function render(id, noiseFn, scale = 5) {
+    const canvas = document.getElementById(id);
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width;
+    const h = canvas.height;
+    const imgData = ctx.createImageData(w, h);
+    const data = imgData.data;
+
+    // 時間経過でアニメーションさせるためのオフセット
+    const time = Date.now() * 0.0002;
+
+    for (let py = 0; py < h; py++) {
+        for (let px = 0; px < w; px++) {
+            // 座標の正規化
+            const x = px / (w / scale);
+            const y = py / (h / scale);
+
+            // ノイズ値取得 (timeを加えて動かす)
+            let val = noiseFn(x, y + time);
+
+            // 0-255に変換
+            let r, g, b;
+            
+            // Curlノイズだけ特別にカラー表示 (方向を色相で)
+            if (id === 'c_curl') {
+                val = Math.max(0, Math.min(1, val));
+                const hue = val * 360;
+                // HSL to RGB 簡易変換 (ここではグレーでなく色をつける)
+                // 簡易的にCSS colorを使うわけにいかないので、
+                // モノクロで「流れ」を表現するなら渦模様になるが、
+                // ここでは分かりやすく緑〜青のグラデーションにする
+                r = val * 255;
+                g = (1-val) * 255;
+                b = 255;
+            } else {
+                val = Math.max(0, Math.min(1, val));
+                const c = Math.floor(val * 255);
+                r = g = b = c;
+            }
+
+            const idx = (px + py * w) * 4;
+            data[idx] = r;
+            data[idx + 1] = g;
+            data[idx + 2] = b;
+            data[idx + 3] = 255;
+        }
+    }
+    ctx.putImageData(imgData, 0, 0);
+    requestAnimationFrame(() => render(id, noiseFn, scale));
+}
+
+// 実行
+render('c_value', Noise.value, 8);
+render('c_perlin', Noise.perlin, 8);
+render('c_worley', Noise.worley, 5);
+render('c_simplex', Noise.simplex, 8);
+render('c_curl', Noise.curl, 4);
+
+</script>
+</body>
+</html>

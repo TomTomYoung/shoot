@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>Ultimate Terrain & Noise Lab</title>
+<style>
+    :root { --bg: #111; --panel: #1a1a1a; --border: #333; --accent: #0066cc; --text: #eee; --code: #aaddff; }
+    body { background: var(--bg); color: var(--text); font-family: 'Consolas', monospace; margin: 0; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+    
+    /* Layout */
+    #header { background: #222; padding: 0 10px; border-bottom: 1px solid var(--border); display: flex; gap: 2px; }
+    .tab-btn { background: #333; border: none; color: #888; padding: 10px 20px; cursor: pointer; font-family: inherit; margin-top: 5px; border-radius: 5px 5px 0 0; }
+    .tab-btn.active { background: #444; color: #fff; font-weight: bold; }
+    .tab-btn:hover { background: #3a3a3a; color: #fff; }
+
+    .tab-content { display: none; flex: 1; height: calc(100vh - 40px); overflow: hidden; }
+    .tab-content.active { display: flex; }
+
+    /* Common UI */
+    .pane-sidebar { width: 400px; background: var(--panel); display: flex; flex-direction: column; border-right: 1px solid var(--border); padding: 10px; overflow-y: auto; }
+    .pane-preview { flex: 1; background: #000; display: flex; justify-content: center; align-items: center; position: relative; }
+    
+    textarea { background: #111; color: #0f0; border: 1px solid var(--border); padding: 10px; font-family: inherit; font-size: 13px; resize: none; min-height: 200px; }
+    h3 { margin: 10px 0 5px; font-size: 14px; color: #aaa; border-bottom: 1px solid #333; padding-bottom: 2px; }
+    select, button { background: #333; color: #fff; border: 1px solid #555; padding: 5px; cursor: pointer; font-family: inherit; }
+    button.primary { background: var(--accent); border-color: #0088ff; }
+    
+    canvas { border: 1px solid #333; box-shadow: 0 0 30px rgba(0,0,0,0.5); image-rendering: pixelated; }
+
+    /* Code View Specific */
+    pre { background: #000; border: 1px solid #333; padding: 10px; color: var(--code); white-space: pre-wrap; word-break: break-all; font-size: 12px; overflow-y: auto; flex: 1; }
+    
+    /* Gallery Specific */
+    .algo-selector { margin-bottom: 10px; display: flex; gap: 10px; }
+    .algo-selector select { flex: 1; font-size: 16px; padding: 10px; }
+</style>
+</head>
+<body>
+
+<div id="header">
+    <button class="tab-btn active" onclick="App.switchTab('editor')">1. Terrain Editor</button>
+    <button class="tab-btn" onclick="App.switchTab('gallery')">2. Noise Lab & Code</button>
+</div>
+
+<div id="editor" class="tab-content active">
+    <div class="pane-sidebar">
+        <h3>Terrain Presets</h3>
+        <div style="margin-bottom:5px; display:flex; gap:5px;">
+            <select id="terrain-preset" onchange="Editor.loadPreset(this.value)" style="flex:1"></select>
+            <button class="primary" onclick="Editor.apply()">Apply (Ctrl+Enter)</button>
+        </div>
+        <textarea id="editor-json" spellcheck="false" style="flex:1"></textarea>
+        <div style="font-size:12px; color:#666; margin-top:5px;">
+            Supports: Background, Ground, Walls (left/right)<br>
+            Noise types: "value", "perlin", "simplex", "worley", "curl"
+        </div>
+    </div>
+    <div class="pane-preview">
+        <canvas id="canvas-editor" width="600" height="800"></canvas>
+    </div>
+</div>
+
+<div id="gallery" class="tab-content">
+    <div class="pane-sidebar">
+        <h3>Algorithm Selection</h3>
+        <div class="algo-selector">
+            <select id="gallery-algo" onchange="Gallery.selectAlgo(this.value)">
+                <option value="value">Value Noise</option>
+                <option value="perlin">Perlin Noise</option>
+                <option value="worley">Worley (Cellular)</option>
+                <option value="simplex">Simplex Noise</option>
+                <option value="curl">Curl Noise (Vector)</option>
+            </select>
+        </div>
+
+        <h3>Live Parameters</h3>
+        <textarea id="gallery-json" spellcheck="false" style="height:120px; min-height:100px;"></textarea>
+        <button class="primary" onclick="Gallery.apply()" style="width:100%; margin-top:5px;">Update View</button>
+
+        <h3>Implementation Code (JS)</h3>
+        <pre id="gallery-code">// Code will appear here</pre>
+    </div>
+    <div class="pane-preview">
+        <canvas id="canvas-gallery" width="600" height="600"></canvas>
+    </div>
+</div>
+
+<script>
+/**
+ * ============================================================================
+ * 1. CORE MATH & NOISE LIBRARY
+ * ============================================================================
+ */
+const Utils = {
+    fract: x => x - Math.floor(x),
+    mix: (a, b, t) => a * (1 - t) + b * t,
+    smoothstep: t => t * t * (3 - 2 * t),
+    hash2: (x, y) => Utils.fract(Math.sin(x * 12.9898 + y * 78.233) * 43758.5453),
+    grad: (x, y) => {
+        const h = Utils.hash2(x, y) * 2 * Math.PI;
+        return { x: Math.cos(h), y: Math.sin(h) };
+    }
+};
+
+const NoiseLib = {
+    // 1. Value Noise
+    value: function(x, y) {
+        const i = Math.floor(x), j = Math.floor(y);
+        const f = { x: x - i, y: y - j };
+        const u = { x: Utils.smoothstep(f.x), y: Utils.smoothstep(f.y) };
+        return Utils.mix(
+            Utils.mix(Utils.hash2(i, j), Utils.hash2(i + 1, j), u.x),
+            Utils.mix(Utils.hash2(i, j + 1), Utils.hash2(i + 1, j + 1), u.x),
+            u.y
+        );
+    },
+
+    // 2. Perlin Noise
+    perlin: function(x, y) {
+        const i = Math.floor(x), j = Math.floor(y);
+        const f = { x: x - i, y: y - j };
+        const u = { x: Utils.smoothstep(f.x), y: Utils.smoothstep(f.y) };
+        const dot = (ix, iy, dx, dy) => {
+            const g = Utils.grad(ix, iy);
+            return g.x * dx + g.y * dy;
+        };
+        return Utils.mix(
+            Utils.mix(dot(i, j, f.x, f.y), dot(i+1, j, f.x-1, f.y), u.x),
+            Utils.mix(dot(i, j+1, f.x, f.y-1), dot(i+1, j+1, f.x-1, f.y-1), u.x),
+            u.y
+        ) * 0.5 + 0.5;
+    },
+
+    // 3. Worley Noise
+    worley: function(x, y) {
+        const i = Math.floor(x), j = Math.floor(y);
+        const f = { x: x - i, y: y - j };
+        let minDist = 1.0;
+        for (let yOff = -1; yOff <= 1; yOff++) {
+            for (let xOff = -1; xOff <= 1; xOff++) {
+                const p = {
+                    x: xOff + Utils.hash2(i + xOff, j + yOff),
+                    y: yOff + Utils.hash2(i + xOff + 5, j + yOff + 7)
+                };
+                const d = Math.sqrt((p.x - f.x)**2 + (p.y - f.y)**2);
+                minDist = Math.min(minDist, d);
+            }
+        }
+        return 1.0 - minDist;
+    },
+
+    // 4. Simplex Noise (2D)
+    simplex: function(x, y) {
+        const F2 = 0.5 * (Math.sqrt(3.0) - 1.0);
+        const G2 = (3.0 - Math.sqrt(3.0)) / 6.0;
+        const s = (x + y) * F2;
+        const i = Math.floor(x + s), j = Math.floor(y + s);
+        const t = (i + j) * G2;
+        const X0 = i - t, Y0 = j - t;
+        const x0 = x - X0, y0 = y - Y0;
+        let i1 = x0 > y0 ? 1 : 0, j1 = x0 > y0 ? 0 : 1;
+        const x1 = x0 - i1 + G2, y1 = y0 - j1 + G2;
+        const x2 = x0 - 1.0 + 2.0 * G2, y2 = y0 - 1.0 + 2.0 * G2;
+        const contrib = (ix, iy, dx, dy) => {
+            let t = 0.5 - dx*dx - dy*dy;
+            if(t < 0) return 0;
+            t *= t;
+            const g = Utils.grad(ix, iy);
+            return t * t * (g.x * dx + g.y * dy);
+        };
+        const n = contrib(i, j, x0, y0) + contrib(i+i1, j+j1, x1, y1) + contrib(i+1, j+1, x2, y2);
+        return 40.0 * n * 0.5 + 0.5;
+    },
+
+    // 5. Curl Noise
+    curl: function(x, y) {
+        const eps = 0.1;
+        const n1 = NoiseLib.perlin(x, y + eps);
+        const n2 = NoiseLib.perlin(x, y - eps);
+        const n3 = NoiseLib.perlin(x + eps, y);
+        const n4 = NoiseLib.perlin(x - eps, y);
+        const dx = (n3 - n4) / (2 * eps);
+        const dy = (n1 - n2) / (2 * eps);
+        return (Math.atan2(dx, -dy) + Math.PI) / (2 * Math.PI);
+    }
+};
+
+/**
+ * ============================================================================
+ * 2. TERRAIN EDITOR LOGIC
+ * ============================================================================
+ */
+const Editor = {
+    canvas: document.getElementById('canvas-editor'),
+    ctx: null,
+    input: document.getElementById('editor-json'),
+    scrollY: 0,
+    config: {},
+    
+    // Original Presets Restored!
+    presets: {
+        'space_debris': {
+            Background: { type: 'value', scale: 0.02, threshold: 0.6, color: '#112233' },
+            Ground: { type: 'value', scale: 0.05, threshold: 0.85, color: '#444455' },
+            Walls: []
+        },
+        'clouds': {
+            Background: { type: 'simplex', scale: 0.01, threshold: 0.4, color: '#8888aa' },
+            Ground: { type: 'simplex', scale: 0.03, threshold: 0.7, color: '#ffffff' },
+            Walls: []
+        },
+        'cavern': {
+            Background: { type: 'perlin', scale: 0.02, threshold: 0.5, color: '#221100' },
+            Ground: { type: 'perlin', scale: 0.04, threshold: 0.8, color: '#553311' },
+            Walls: [
+                { side: 'left', amp: 30, freq: 0.015, offset: 50, color: '#442211' },
+                { side: 'right', amp: 30, freq: 0.015, offset: 50, color: '#442211' }
+            ]
+        },
+        'alien_hive': {
+            Background: { type: 'worley', scale: 0.05, threshold: 0.7, color: '#220011' },
+            Ground: { type: 'worley', scale: 0.08, threshold: 0.6, color: '#552244' },
+            Walls: []
+        }
+    },
+
+    init: function() {
+        this.ctx = this.canvas.getContext('2d');
+        const sel = document.getElementById('terrain-preset');
+        for(let k in this.presets) {
+            let opt = document.createElement('option');
+            opt.value = k; opt.innerText = k;
+            sel.appendChild(opt);
+        }
+        this.loadPreset('space_debris');
+        this.loop();
+        
+        this.input.addEventListener('keydown', e => {
+            if(e.key === 'Enter' && (e.ctrlKey||e.metaKey)) { e.preventDefault(); this.apply(); }
+        });
+    },
+
+    loadPreset: function(key) {
+        this.config = JSON.parse(JSON.stringify(this.presets[key]));
+        this.input.value = JSON.stringify(this.config, null, 4);
+    },
+
+    apply: function() {
+        try { this.config = JSON.parse(this.input.value); } 
+        catch(e) { alert("JSON Error: " + e.message); }
+    },
+
+    getWallBoundary: function(y, wallDef, w) {
+        // Sine wave wall generation logic
+        const val = Math.sin(y * wallDef.freq) * wallDef.amp + wallDef.offset;
+        if (wallDef.side === 'left') return val;
+        if (wallDef.side === 'right') return w - val;
+        return 0;
+    },
+
+    loop: function() {
+        this.scrollY -= 2;
+        this.render();
+        requestAnimationFrame(() => this.loop());
+    },
+
+    render: function() {
+        const w = this.canvas.width, h = this.canvas.height;
+        this.ctx.fillStyle = '#000';
+        this.ctx.fillRect(0, 0, w, h);
+
+        const DOT = 4;
+        const rows = Math.ceil(h/DOT), cols = Math.ceil(w/DOT);
+
+        // Pre-calculate Wall Configs to avoid parsing in loop
+        const leftWalls = (this.config.Walls || []).filter(wa => wa.side === 'left');
+        const rightWalls = (this.config.Walls || []).filter(wa => wa.side === 'right');
+
+        for(let r=0; r<rows; r++) {
+            const y = r * DOT;
+            const wy = y - this.scrollY;
+            
+            // Wall Calculation per row
+            let limitL = 0;
+            let limitR = w;
+
+            leftWalls.forEach(wa => {
+                const b = this.getWallBoundary(wy, wa, w);
+                if(b > limitL) limitL = b;
+            });
+            rightWalls.forEach(wa => {
+                const b = this.getWallBoundary(wy, wa, w);
+                if(b < limitR) limitR = b;
+            });
+
+            for(let c=0; c<cols; c++) {
+                const x = c * DOT;
+                
+                // 1. Walls (Top priority)
+                if(leftWalls.length > 0 && x < limitL) {
+                    this.ctx.fillStyle = leftWalls[0].color;
+                    this.ctx.fillRect(x, y, DOT, DOT);
+                    continue;
+                }
+                if(rightWalls.length > 0 && x > limitR) {
+                    this.ctx.fillStyle = rightWalls[0].color;
+                    this.ctx.fillRect(x, y, DOT, DOT);
+                    continue;
+                }
+
+                // 2. Ground Object Layer
+                if(this.config.Ground) {
+                    const g = this.config.Ground;
+                    const fn = NoiseLib[g.type] || NoiseLib.value;
+                    const n = fn(x * g.scale, wy * g.scale);
+                    if(n > g.threshold) {
+                        this.ctx.fillStyle = g.color;
+                        this.ctx.fillRect(x, y, DOT, DOT);
+                        continue;
+                    }
+                }
+
+                // 3. Background Layer
+                if(this.config.Background) {
+                    const b = this.config.Background;
+                    const fn = NoiseLib[b.type] || NoiseLib.value;
+                    const n = fn(x * b.scale, wy * b.scale);
+                    if(n > b.threshold) {
+                        this.ctx.fillStyle = b.color;
+                        this.ctx.fillRect(x, y, DOT, DOT);
+                    }
+                }
+            }
+        }
+    }
+};
+
+/**
+ * ============================================================================
+ * 3. NOISE LAB & GALLERY LOGIC
+ * ============================================================================
+ */
+const Gallery = {
+    canvas: document.getElementById('canvas-gallery'),
+    ctx: null,
+    input: document.getElementById('gallery-json'),
+    codeView: document.getElementById('gallery-code'),
+    currentAlgo: 'perlin',
+    params: { scale: 8, speed: 1.0, colorize: false },
+
+    init: function() {
+        this.ctx = this.canvas.getContext('2d');
+        this.selectAlgo('perlin');
+        this.loop();
+    },
+
+    selectAlgo: function(name) {
+        this.currentAlgo = name;
+        this.codeView.textContent = NoiseLib[name].toString();
+        if(name === 'curl') this.params = { scale: 4, speed: 0.5, colorize: true };
+        else this.params = { scale: 8, speed: 1.0, colorize: false };
+        this.input.value = JSON.stringify(this.params, null, 4);
+    },
+
+    apply: function() {
+        try { this.params = JSON.parse(this.input.value); } 
+        catch(e) { alert("JSON Error"); }
+    },
+
+    loop: function() {
+        if(document.getElementById('gallery').classList.contains('active')) {
+            this.render();
+        }
+        requestAnimationFrame(() => this.loop());
+    },
+
+    render: function() {
+        const w = this.canvas.width, h = this.canvas.height;
+        const idata = this.ctx.createImageData(w, h);
+        const data = idata.data;
+        const fn = NoiseLib[this.currentAlgo];
+        
+        const scale = this.params.scale || 8;
+        const time = (Date.now() * 0.001) * (this.params.speed || 1);
+
+        for(let py=0; py<h; py++) {
+            for(let px=0; px<w; px++) {
+                const x = px / (w / scale);
+                const y = py / (h / scale);
+                let val = fn(x, y + time);
+                let r, g, b;
+                val = Math.max(0, Math.min(1, val));
+
+                if(this.params.colorize) {
+                    const hue = val * 360;
+                    // Simple HSL->RGB
+                    const s=1, l=0.5;
+                    const c = (1 - Math.abs(2 * l - 1)) * s;
+                    const hp = hue / 60.0;
+                    const xx = c * (1 - Math.abs((hp % 2) - 1));
+                    let r1=0, g1=0, b1=0;
+                    if (hp >= 0 && hp < 1) { r1 = c; g1 = xx; }
+                    else if (hp >= 1 && hp < 2) { r1 = xx; g1 = c; }
+                    else if (hp >= 2 && hp < 3) { g1 = c; b1 = xx; }
+                    else if (hp >= 3 && hp < 4) { g1 = xx; b1 = c; }
+                    else if (hp >= 4 && hp < 5) { r1 = xx; b1 = c; }
+                    else if (hp >= 5 && hp < 6) { r1 = c; b1 = xx; }
+                    const m = l - c / 2;
+                    r = (r1+m)*255; g = (g1+m)*255; b = (b1+m)*255;
+                } else {
+                    const c = val * 255;
+                    r = g = b = c;
+                }
+                const idx = (px + py * w) * 4;
+                data[idx] = r; data[idx+1] = g; data[idx+2] = b; data[idx+3] = 255;
+            }
+        }
+        this.ctx.putImageData(idata, 0, 0);
+    }
+};
+
+/**
+ * ============================================================================
+ * 4. APP CONTROLLER
+ * ============================================================================
+ */
+const App = {
+    switchTab: function(id) {
+        document.querySelectorAll('.tab-content').forEach(e => e.classList.remove('active'));
+        document.querySelectorAll('.tab-btn').forEach(e => e.classList.remove('active'));
+        document.getElementById(id).classList.add('active');
+        
+        const btns = document.querySelectorAll('.tab-btn');
+        if(id === 'editor') btns[0].classList.add('active');
+        else btns[1].classList.add('active');
+    }
+};
+
+// Start
+Editor.init();
+Gallery.init();
+
+</script>
+</body>
+</html>

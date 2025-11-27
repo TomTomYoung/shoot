@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>Ultimate Terrain & Noise Lab (Extended)</title>
+<style>
+    :root { --bg: #111; --panel: #1a1a1a; --border: #333; --accent: #0066cc; --text: #eee; --code: #aaddff; }
+    body { background: var(--bg); color: var(--text); font-family: 'Consolas', monospace; margin: 0; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+    
+    /* Layout */
+    #header { background: #222; padding: 0 10px; border-bottom: 1px solid var(--border); display: flex; gap: 2px; }
+    .tab-btn { background: #333; border: none; color: #888; padding: 10px 20px; cursor: pointer; font-family: inherit; margin-top: 5px; border-radius: 5px 5px 0 0; transition: 0.2s; }
+    .tab-btn.active { background: #444; color: #fff; font-weight: bold; }
+    .tab-btn:hover { background: #3a3a3a; color: #fff; }
+
+    .tab-content { display: none; flex: 1; height: calc(100vh - 40px); overflow: hidden; }
+    .tab-content.active { display: flex; }
+
+    /* Common UI */
+    .pane-sidebar { width: 400px; background: var(--panel); display: flex; flex-direction: column; border-right: 1px solid var(--border); padding: 10px; overflow-y: auto; }
+    .pane-preview { flex: 1; background: #000; display: flex; justify-content: center; align-items: center; position: relative; }
+    
+    textarea { background: #111; color: #0f0; border: 1px solid var(--border); padding: 10px; font-family: inherit; font-size: 13px; resize: none; min-height: 200px; line-height: 1.4; }
+    h3 { margin: 15px 0 5px; font-size: 14px; color: #aaa; border-bottom: 1px solid #333; padding-bottom: 2px; }
+    h3:first-child { margin-top: 0; }
+    
+    select, button { background: #333; color: #fff; border: 1px solid #555; padding: 5px; cursor: pointer; font-family: inherit; }
+    button.primary { background: var(--accent); border-color: #0088ff; }
+    button:hover { background: #444; }
+    
+    canvas { border: 1px solid #333; box-shadow: 0 0 30px rgba(0,0,0,0.5); image-rendering: pixelated; }
+
+    /* Code View Specific */
+    pre { background: #000; border: 1px solid #333; padding: 10px; color: var(--code); white-space: pre-wrap; word-break: break-all; font-size: 12px; overflow-y: auto; flex: 1; }
+    
+    .row { display: flex; gap: 5px; margin-bottom: 5px; }
+    .flex-1 { flex: 1; }
+</style>
+</head>
+<body>
+
+<div id="header">
+    <button class="tab-btn active" data-target="editor">1. Terrain Editor</button>
+    <button class="tab-btn" data-target="gallery">2. Noise Lab & Code</button>
+</div>
+
+<div id="editor" class="tab-content active">
+    <div class="pane-sidebar">
+        <h3>Terrain Presets</h3>
+        <div class="row">
+            <select id="terrain-preset" class="flex-1"></select>
+            <button class="primary" id="btn-apply-terrain">Apply (Ctrl+Enter)</button>
+        </div>
+        <textarea id="input-terrain" spellcheck="false" class="flex-1"></textarea>
+        <div style="font-size:12px; color:#666; margin-top:5px;">
+            Supports: Background, Ground, Walls (left/right)<br>
+            All algos in "Noise Lab" are usable here.
+        </div>
+    </div>
+    <div class="pane-preview">
+        <canvas id="canvas-terrain" width="600" height="800"></canvas>
+    </div>
+</div>
+
+<div id="gallery" class="tab-content">
+    <div class="pane-sidebar">
+        <h3>Algorithm Selection</h3>
+        <div class="row">
+            <select id="select-algo" class="flex-1"></select>
+        </div>
+
+        <h3>Live Parameters</h3>
+        <textarea id="input-noise" spellcheck="false" style="height:120px; min-height:100px;"></textarea>
+        <button class="primary" id="btn-apply-noise" style="width:100%; margin-top:5px;">Update View</button>
+
+        <h3>Implementation Code (JS)</h3>
+        <pre id="code-view">// Code will appear here</pre>
+    </div>
+    <div class="pane-preview">
+        <canvas id="canvas-noise" width="600" height="600"></canvas>
+    </div>
+</div>
+
+<script>
+/**
+ * ============================================================================
+ * MODULE 1: NOISE MATH & GENERATOR
+ * ============================================================================
+ */
+class NoiseMath {
+    static fract(x) { return x - Math.floor(x); }
+    static mix(a, b, t) { return a * (1 - t) + b * t; }
+    static smoothstep(t) { return t * t * (3 - 2 * t); }
+    static hash2(x, y) { return this.fract(Math.sin(x * 12.9898 + y * 78.233) * 43758.5453); }
+    static dist(x1, y1, x2, y2) { return Math.sqrt((x2-x1)**2 + (y2-y1)**2); }
+    static grad(x, y) {
+        const h = this.hash2(x, y) * 2 * Math.PI;
+        return { x: Math.cos(h), y: Math.sin(h) };
+    }
+}
+
+class NoiseGenerator {
+    constructor() {
+        // Register all functions
+        this.algos = {
+            // --- CLASSIC NOISE ---
+            value: this.value.bind(this),
+            perlin: this.perlin.bind(this),
+            worley: this.worley.bind(this),
+            simplex: this.simplex.bind(this),
+            curl: this.curl.bind(this),
+
+            // --- TRIGONOMETRIC PATTERNS ---
+            sin_basic: this.sin_basic.bind(this),
+            sin_plasma: this.sin_plasma.bind(this),
+            sin_lattice: this.sin_lattice.bind(this),
+            sin_interference: this.sin_interference.bind(this),
+            sin_rings: this.sin_rings.bind(this),
+            
+            // --- EXPERIMENTAL / GLITCH ---
+            trig_warp: this.trig_warp.bind(this),
+            moire: this.moire.bind(this),
+            alien_circuit: this.alien_circuit.bind(this),
+            
+            // --- FRACTAL / COMPOSITE ---
+            perlin_fbm: this.perlin_fbm.bind(this),
+            perlin_turbulence: this.perlin_turbulence.bind(this),
+            perlin_ridge: this.perlin_ridge.bind(this)
+        };
+    }
+
+    get(name) { return this.algos[name] || this.algos.value; }
+
+    // --- 1. Classic Impls ---
+    value(x, y) {
+        const i = Math.floor(x), j = Math.floor(y);
+        const f = { x: x - i, y: y - j };
+        const u = { x: NoiseMath.smoothstep(f.x), y: NoiseMath.smoothstep(f.y) };
+        return NoiseMath.mix(
+            NoiseMath.mix(NoiseMath.hash2(i, j), NoiseMath.hash2(i + 1, j), u.x),
+            NoiseMath.mix(NoiseMath.hash2(i, j + 1), NoiseMath.hash2(i + 1, j + 1), u.x),
+            u.y
+        );
+    }
+
+    perlin(x, y) {
+        const i = Math.floor(x), j = Math.floor(y);
+        const f = { x: x - i, y: y - j };
+        const u = { x: NoiseMath.smoothstep(f.x), y: NoiseMath.smoothstep(f.y) };
+        const dot = (ix, iy, dx, dy) => {
+            const g = NoiseMath.grad(ix, iy);
+            return g.x * dx + g.y * dy;
+        };
+        return NoiseMath.mix(
+            NoiseMath.mix(dot(i, j, f.x, f.y), dot(i+1, j, f.x-1, f.y), u.x),
+            NoiseMath.mix(dot(i, j+1, f.x, f.y-1), dot(i+1, j+1, f.x-1, f.y-1), u.x),
+            u.y
+        ) * 0.5 + 0.5;
+    }
+
+    worley(x, y) {
+        const i = Math.floor(x), j = Math.floor(y);
+        const f = { x: x - i, y: y - j };
+        let minDist = 1.0;
+        for (let yOff = -1; yOff <= 1; yOff++) {
+            for (let xOff = -1; xOff <= 1; xOff++) {
+                const p = {
+                    x: xOff + NoiseMath.hash2(i + xOff, j + yOff),
+                    y: yOff + NoiseMath.hash2(i + xOff + 5, j + yOff + 7)
+                };
+                const d = NoiseMath.dist(p.x, p.y, f.x, f.y);
+                minDist = Math.min(minDist, d);
+            }
+        }
+        return 1.0 - minDist;
+    }
+
+    simplex(x, y) {
+        const F2 = 0.5 * (Math.sqrt(3.0) - 1.0);
+        const G2 = (3.0 - Math.sqrt(3.0)) / 6.0;
+        const s = (x + y) * F2;
+        const i = Math.floor(x + s), j = Math.floor(y + s);
+        const t = (i + j) * G2;
+        const X0 = i - t, Y0 = j - t;
+        const x0 = x - X0, y0 = y - Y0;
+        let i1 = x0 > y0 ? 1 : 0, j1 = x0 > y0 ? 0 : 1;
+        const x1 = x0 - i1 + G2, y1 = y0 - j1 + G2;
+        const x2 = x0 - 1.0 + 2.0 * G2, y2 = y0 - 1.0 + 2.0 * G2;
+        const contrib = (ix, iy, dx, dy) => {
+            let t = 0.5 - dx*dx - dy*dy;
+            if(t < 0) return 0;
+            t *= t;
+            const g = NoiseMath.grad(ix, iy);
+            return t * t * (g.x * dx + g.y * dy);
+        };
+        const n = contrib(i, j, x0, y0) + contrib(i+i1, j+j1, x1, y1) + contrib(i+1, j+1, x2, y2);
+        return 40.0 * n * 0.5 + 0.5;
+    }
+
+    curl(x, y) {
+        const eps = 0.1;
+        const n1 = this.perlin(x, y + eps);
+        const n2 = this.perlin(x, y - eps);
+        const n3 = this.perlin(x + eps, y);
+        const n4 = this.perlin(x - eps, y);
+        const dx = (n3 - n4) / (2 * eps);
+        const dy = (n1 - n2) / (2 * eps);
+        return (Math.atan2(dx, -dy) + Math.PI) / (2 * Math.PI);
+    }
+
+    // --- 2. Trig Patterns ---
+    sin_basic(x, y) {
+        return Math.sin(x) * 0.5 + 0.5;
+    }
+
+    sin_plasma(x, y) {
+        // Classic demo effect
+        const v = Math.sin(x) + Math.sin(y) + Math.sin((x + y) * 0.5) + Math.sin(Math.sqrt(x*x + y*y));
+        return v / 4 * 0.5 + 0.5;
+    }
+
+    sin_lattice(x, y) {
+        return (Math.sin(x) * Math.cos(y)) * 0.5 + 0.5;
+    }
+
+    sin_interference(x, y) {
+        // Two waves colliding
+        const v1 = Math.sin(x * 0.5 + y * 0.5);
+        const v2 = Math.sin(x * 0.6 - y * 0.4 + 2.0);
+        return (v1 + v2) / 2 * 0.5 + 0.5;
+    }
+
+    sin_rings(x, y) {
+        const d = Math.sqrt(x*x + y*y);
+        return Math.sin(d) * 0.5 + 0.5;
+    }
+
+    // --- 3. Experimental ---
+    trig_warp(x, y) {
+        // Domain warping with trig
+        const qx = x + Math.sin(y);
+        const qy = y + Math.cos(x);
+        return Math.sin(qx + qy) * 0.5 + 0.5;
+    }
+
+    moire(x, y) {
+        // High frequency interference
+        return Math.sin(x * 10) * Math.sin(y * 8) * 0.5 + 0.5;
+    }
+
+    alien_circuit(x, y) {
+        // weird bitwise-like structure using continuous math
+        const v = Math.sin(x*x ^ y*y); 
+        return v * 0.5 + 0.5;
+    }
+
+    // --- 4. Fractal / Composite (FBM) ---
+    perlin_fbm(x, y) {
+        let v = 0, a = 0.5, f = 1.0;
+        for(let i=0; i<4; i++) {
+            v += this.perlin(x * f, y * f) * a;
+            a *= 0.5;
+            f *= 2.0;
+        }
+        return v * 0.8; // Normalize approx
+    }
+
+    perlin_turbulence(x, y) {
+        let v = 0, a = 0.5, f = 1.0;
+        for(let i=0; i<4; i++) {
+            v += Math.abs(this.perlin(x * f, y * f) * 2 - 1) * a;
+            a *= 0.5;
+            f *= 2.0;
+        }
+        return v;
+    }
+    
+    perlin_ridge(x, y) {
+        let v = 0, a = 0.5, f = 1.0;
+        for(let i=0; i<4; i++) {
+            let n = Math.abs(this.perlin(x * f, y * f) * 2 - 1);
+            n = 1.0 - n;
+            n = n * n;
+            v += n * a;
+            a *= 0.5;
+            f *= 2.0;
+        }
+        return v;
+    }
+}
+
+/**
+ * ============================================================================
+ * MODULE 2: TERRAIN SYSTEM (Unchanged Logic)
+ * ============================================================================
+ */
+class TerrainSystem {
+    constructor(noiseGen) {
+        this.noise = noiseGen;
+    }
+    evaluate(x, y, width, config) {
+        if (config.Walls) {
+            let limitL = 0, limitR = width;
+            for(const w of config.Walls) {
+                const val = Math.sin(y * w.freq) * w.amp + w.offset;
+                if(w.side === 'left') limitL = Math.max(limitL, val);
+                if(w.side === 'right') limitR = Math.min(limitR, width - val);
+            }
+            const wallL = config.Walls.find(w => w.side === 'left');
+            const wallR = config.Walls.find(w => w.side === 'right');
+            if(wallL && x < limitL) return { type: 'wall', color: wallL.color };
+            if(wallR && x > limitR) return { type: 'wall', color: wallR.color };
+        }
+        if (config.Ground) {
+            const g = config.Ground;
+            const fn = this.noise.get(g.type);
+            const n = fn(x * g.scale, y * g.scale);
+            if(n > g.threshold) return { type: 'ground', color: g.color };
+        }
+        if (config.Background) {
+            const b = config.Background;
+            const fn = this.noise.get(b.type);
+            const n = fn(x * b.scale, y * b.scale);
+            if(n > b.threshold) return { type: 'bg', color: b.color };
+        }
+        return { type: 'none', color: null };
+    }
+}
+
+/**
+ * ============================================================================
+ * MODULE 3: VISUALIZER
+ * ============================================================================
+ */
+class Visualizer {
+    constructor(canvasId) {
+        this.canvas = document.getElementById(canvasId);
+        this.ctx = this.canvas.getContext('2d');
+        this.width = this.canvas.width;
+        this.height = this.canvas.height;
+    }
+    clear(color = '#000') {
+        this.ctx.fillStyle = color;
+        this.ctx.fillRect(0, 0, this.width, this.height);
+    }
+    drawTerrain(terrainSys, config, scrollY, dotSize = 4) {
+        this.clear();
+        const rows = Math.ceil(this.height / dotSize);
+        const cols = Math.ceil(this.width / dotSize);
+        for (let r = 0; r < rows; r++) {
+            const y = r * dotSize;
+            const worldY = y - scrollY;
+            for (let c = 0; c < cols; c++) {
+                const x = c * dotSize;
+                const result = terrainSys.evaluate(x, worldY, this.width, config);
+                if (result.type !== 'none') {
+                    this.ctx.fillStyle = result.color;
+                    this.ctx.fillRect(x, y, dotSize, dotSize);
+                }
+            }
+        }
+    }
+    drawNoise(noiseGen, algoName, params, time) {
+        const idata = this.ctx.createImageData(this.width, this.height);
+        const data = idata.data;
+        const fn = noiseGen.get(algoName);
+        const scale = params.scale || 8;
+        
+        const hslToRgb = (h, s, l) => {
+            const c = (1 - Math.abs(2 * l - 1)) * s;
+            const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+            const m = l - c / 2;
+            let r=0,g=0,b=0;
+            if (0<=h&&h<60) {r=c;g=x;b=0;} else if (60<=h&&h<120) {r=x;g=c;b=0;}
+            else if (120<=h&&h<180) {r=0;g=c;b=x;} else if (180<=h&&h<240) {r=0;g=x;b=c;}
+            else if (240<=h&&h<300) {r=x;g=0;b=c;} else if (300<=h&&h<360) {r=c;g=0;b=x;}
+            return [(r+m)*255, (g+m)*255, (b+m)*255];
+        };
+
+        for(let py=0; py<this.height; py++) {
+            for(let px=0; px<this.width; px++) {
+                const x = px / (this.width / scale);
+                const y = py / (this.height / scale);
+                // Time usually affects Y or phase
+                let val = fn(x, y + time);
+                val = Math.max(0, Math.min(1, val));
+
+                let r, g, b;
+                if(params.colorize) {
+                    [r, g, b] = hslToRgb(val * 360, 1, 0.5);
+                } else {
+                    r = g = b = val * 255;
+                }
+                const idx = (px + py * this.width) * 4;
+                data[idx] = r; data[idx+1] = g; data[idx+2] = b; data[idx+3] = 255;
+            }
+        }
+        this.ctx.putImageData(idata, 0, 0);
+    }
+}
+
+/**
+ * ============================================================================
+ * MODULE 4: APP CONTROLLER
+ * ============================================================================
+ */
+const App = {
+    noiseGen: new NoiseGenerator(),
+    terrainSys: null,
+    views: {},
+    state: {
+        scrollY: 0,
+        terrainConfig: {},
+        noiseConfig: {},
+        activeTab: 'editor',
+        lastFrame: 0
+    },
+presets: {
+        terrain: {
+            // --- 既存のプリセット ---
+            'space_debris': {
+                Background: { type: 'value', scale: 0.02, threshold: 0.6, color: '#112233' },
+                Ground: { type: 'value', scale: 0.05, threshold: 0.85, color: '#444455' },
+                Walls: []
+            },
+            'clouds': {
+                Background: { type: 'simplex', scale: 0.01, threshold: 0.4, color: '#8888aa' },
+                Ground: { type: 'simplex', scale: 0.03, threshold: 0.7, color: '#ffffff' },
+                Walls: []
+            },
+            'cavern': {
+                Background: { type: 'perlin', scale: 0.02, threshold: 0.5, color: '#221100' },
+                Ground: { type: 'perlin', scale: 0.04, threshold: 0.8, color: '#553311' },
+                Walls: [
+                    { side: 'left', amp: 30, freq: 0.015, offset: 50, color: '#442211' },
+                    { side: 'right', amp: 30, freq: 0.015, offset: 50, color: '#442211' }
+                ]
+            },
+            'alien_hive': {
+                Background: { type: 'worley', scale: 0.05, threshold: 0.7, color: '#220011' },
+                Ground: { type: 'worley', scale: 0.08, threshold: 0.6, color: '#552244' },
+                Walls: []
+            },
+
+            // --- 新規追加: 新しいアルゴリズムの活用例 ---
+            'retro_plasma': {
+                // サイン波形合成による液体のような表現
+                Background: { type: 'sin_lattice', scale: 0.1, threshold: 0.5, color: '#220033' },
+                Ground: { type: 'sin_plasma', scale: 0.05, threshold: 0.6, color: '#ff00cc' },
+                Walls: []
+            },
+            'cyber_circuit': {
+                // ビット演算風ノイズとモアレによるデジタル回路風
+                Background: { type: 'alien_circuit', scale: 0.05, threshold: 0.2, color: '#001100' },
+                Ground: { type: 'moire', scale: 0.15, threshold: 0.85, color: '#00ff00' },
+                Walls: []
+            },
+            'fractal_mountains': {
+                // FBMとRidgeノイズによる険しい地形
+                Background: { type: 'perlin_fbm', scale: 0.01, threshold: 0.4, color: '#334455' },
+                Ground: { type: 'perlin_ridge', scale: 0.02, threshold: 0.75, color: '#aaeeff' },
+                Walls: []
+            },
+            'warp_zone': {
+                // 空間歪曲（Domain Warping）と干渉波
+                Background: { type: 'trig_warp', scale: 0.03, threshold: 0.5, color: '#440000' },
+                Ground: { type: 'sin_interference', scale: 0.04, threshold: 0.6, color: '#ffaa00' },
+                Walls: []
+            }
+        }
+    },
+
+    init() {
+        this.terrainSys = new TerrainSystem(this.noiseGen);
+        this.views.terrain = new Visualizer('canvas-terrain');
+        this.views.noise = new Visualizer('canvas-noise');
+
+        this.bindEvents();
+        this.initTerrainUI();
+        this.initNoiseUI();
+        
+        requestAnimationFrame(t => this.loop(t));
+    },
+
+    bindEvents() {
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                btn.classList.add('active');
+                document.getElementById(btn.dataset.target).classList.add('active');
+                this.state.activeTab = btn.dataset.target;
+            });
+        });
+    },
+
+    initTerrainUI() {
+        const sel = document.getElementById('terrain-preset');
+        const txt = document.getElementById('input-terrain');
+        Object.keys(this.presets.terrain).forEach(k => {
+            const opt = document.createElement('option');
+            opt.value = k; opt.innerText = k;
+            sel.appendChild(opt);
+        });
+        const load = (key) => {
+            this.state.terrainConfig = JSON.parse(JSON.stringify(this.presets.terrain[key]));
+            txt.value = JSON.stringify(this.state.terrainConfig, null, 4);
+        };
+        const apply = () => {
+            try { this.state.terrainConfig = JSON.parse(txt.value); } 
+            catch(e) { alert("JSON Error: " + e.message); }
+        };
+        sel.addEventListener('change', e => load(e.target.value));
+        document.getElementById('btn-apply-terrain').addEventListener('click', apply);
+        txt.addEventListener('keydown', e => {
+            if(e.key === 'Enter' && (e.ctrlKey||e.metaKey)) { e.preventDefault(); apply(); }
+        });
+        load('space_debris');
+    },
+
+    initNoiseUI() {
+        const sel = document.getElementById('select-algo');
+        const txt = document.getElementById('input-noise');
+        const code = document.getElementById('code-view');
+
+        // Dynamically populate noise algorithms from the Generator
+        Object.keys(this.noiseGen.algos).forEach(key => {
+            const opt = document.createElement('option');
+            opt.value = key;
+            opt.innerText = key.replace('_', ' ').toUpperCase();
+            sel.appendChild(opt);
+        });
+
+        const updateAlgo = (name) => {
+            code.textContent = this.noiseGen.get(name).toString();
+            let p = { scale: 8, speed: 1.0, colorize: false };
+            if(name === 'curl' || name.includes('plasma')) p = { scale: 4, speed: 0.5, colorize: true };
+            if(name.includes('interference')) p = { scale: 12, speed: 2.0, colorize: true };
+            
+            this.state.noiseConfig = p;
+            txt.value = JSON.stringify(p, null, 4);
+        };
+
+        const apply = () => {
+            try { this.state.noiseConfig = JSON.parse(txt.value); }
+            catch(e) { alert("JSON Error"); }
+        };
+
+        sel.addEventListener('change', e => updateAlgo(e.target.value));
+        document.getElementById('btn-apply-noise').addEventListener('click', apply);
+        
+        updateAlgo('perlin');
+    },
+
+    loop(timestamp) {
+        const dt = (timestamp - this.state.lastFrame) / 1000;
+        this.state.lastFrame = timestamp;
+        const time = timestamp * 0.001;
+
+        if (this.state.activeTab === 'editor') {
+            this.state.scrollY -= 2;
+            this.views.terrain.drawTerrain(
+                this.terrainSys, 
+                this.state.terrainConfig, 
+                this.state.scrollY
+            );
+        } else {
+            const algo = document.getElementById('select-algo').value;
+            const speed = this.state.noiseConfig.speed || 1;
+            this.views.noise.drawNoise(
+                this.noiseGen, 
+                algo, 
+                this.state.noiseConfig, 
+                time * speed
+            );
+        }
+        requestAnimationFrame(t => this.loop(t));
+    }
+};
+
+App.init();
+
+</script>
+</body>
+</html>
