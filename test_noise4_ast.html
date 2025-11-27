@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>Ultimate Terrain & Noise Lab (AST + Full Data)</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/acorn/8.11.3/acorn.min.js"></script>
+<style>
+    :root { --bg: #111; --panel: #1a1a1a; --border: #333; --accent: #0066cc; --error: #cc3300; --text: #eee; --code: #aaddff; }
+    body { background: var(--bg); color: var(--text); font-family: 'Consolas', monospace; margin: 0; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+    
+    /* Layout */
+    #header { background: #222; padding: 0 10px; border-bottom: 1px solid var(--border); display: flex; gap: 2px; }
+    .tab-btn { background: #333; border: none; color: #888; padding: 10px 20px; cursor: pointer; font-family: inherit; margin-top: 5px; border-radius: 5px 5px 0 0; transition: 0.2s; }
+    .tab-btn.active { background: #444; color: #fff; font-weight: bold; }
+    
+    .tab-content { display: none; flex: 1; height: calc(100vh - 40px); overflow: hidden; }
+    .tab-content.active { display: flex; }
+
+    /* UI Components */
+    .pane-sidebar { width: 450px; background: var(--panel); display: flex; flex-direction: column; border-right: 1px solid var(--border); padding: 10px; overflow-y: auto; }
+    .pane-preview { flex: 1; background: #000; display: flex; justify-content: center; align-items: center; position: relative; }
+    
+    textarea { background: #111; color: #0f0; border: 1px solid var(--border); padding: 10px; font-family: 'Consolas', monospace; font-size: 13px; resize: none; line-height: 1.4; tab-size: 4; outline: none; }
+    
+    .code-editor { background: #0d1117; color: #e6edf3; border: 1px solid #30363d; flex: 1; min-height: 200px; white-space: pre; overflow-x: auto; font-size: 12px; }
+    .code-editor:focus { border-color: var(--accent); }
+    .code-editor.error { border-color: var(--error); background: #1a0505; }
+
+    h3 { margin: 15px 0 5px; font-size: 14px; color: #aaa; border-bottom: 1px solid #333; padding-bottom: 2px; }
+    
+    select, button { background: #333; color: #fff; border: 1px solid #555; padding: 5px; cursor: pointer; font-family: inherit; }
+    button.primary { background: var(--accent); border-color: #0088ff; }
+    
+    .row { display: flex; gap: 5px; margin-bottom: 5px; }
+    .flex-1 { flex: 1; }
+    .status-msg { font-size: 11px; margin-top: 5px; min-height: 1.4em; }
+    .status-ok { color: #0f0; }
+    .status-err { color: #f55; }
+    .tip { font-size: 11px; color: #888; margin-bottom: 5px; }
+</style>
+</head>
+<body>
+
+<div id="header">
+    <button class="tab-btn active" data-target="editor">1. Terrain Editor</button>
+    <button class="tab-btn" data-target="gallery">2. Noise Lab (AST Edit)</button>
+</div>
+
+<div id="editor" class="tab-content active">
+    <div class="pane-sidebar">
+        <h3>Terrain Presets</h3>
+        <div class="row">
+            <select id="terrain-preset" class="flex-1"></select>
+            <button class="primary" id="btn-apply-terrain">Apply</button>
+        </div>
+        <div class="tip">Select "🔗 Link to Noise Lab" to use the algo from Tab 2.</div>
+        <textarea id="input-terrain" spellcheck="false" class="flex-1"></textarea>
+    </div>
+    <div class="pane-preview">
+        <canvas id="canvas-terrain" width="600" height="800"></canvas>
+    </div>
+</div>
+
+<div id="gallery" class="tab-content">
+    <div class="pane-sidebar">
+        <h3>Algorithm Selection</h3>
+        <div class="row">
+            <select id="select-algo" class="flex-1"></select>
+        </div>
+
+        <h3>Parameters</h3>
+        <textarea id="input-noise" spellcheck="false" style="height:80px; min-height:80px; color:#8f8;"></textarea>
+
+        <h3>Source Code (Live AST Parsing)</h3>
+        <textarea id="code-editor" class="code-editor" spellcheck="false"></textarea>
+        
+        <div id="compile-status" class="status-msg status-ok">Ready.</div>
+        <button class="primary" id="btn-apply-noise" style="width:100%; margin-top:5px; height: 40px;">
+            AST CHECK & COMPILE
+        </button>
+    </div>
+    <div class="pane-preview">
+        <canvas id="canvas-noise" width="600" height="600"></canvas>
+    </div>
+</div>
+
+<script>
+/**
+ * ============================================================================
+ * MODULE 0: AST PARSER HELPER (Uses Acorn)
+ * ============================================================================
+ */
+class CodeParser {
+    static extractBody(fnString) {
+        if (!window.acorn) return this.fallbackExtract(fnString);
+        try {
+            let codeToParse = fnString.trim();
+            if (!codeToParse.startsWith('function') && !codeToParse.startsWith('(')) {
+                codeToParse = 'function ' + codeToParse;
+            }
+            const ast = acorn.parse(codeToParse, { ecmaVersion: 2020 });
+            let bodyNode = null;
+            const walk = (node) => {
+                if (bodyNode) return;
+                if (node.type === 'BlockStatement') { bodyNode = node; return; }
+                for (const key in node) {
+                    if (node[key] && typeof node[key] === 'object') {
+                        if (Array.isArray(node[key])) node[key].forEach(walk);
+                        else walk(node[key]);
+                    }
+                }
+            };
+            walk(ast);
+            if (bodyNode) return codeToParse.substring(bodyNode.start + 1, bodyNode.end - 1).trim();
+        } catch (e) { console.warn("AST Fallback"); }
+        return this.fallbackExtract(fnString);
+    }
+    static validate(bodyCode) {
+        if (!window.acorn) return { valid: true };
+        const wrapped = `function check(x,y,t,M,N) { ${bodyCode} }`;
+        try {
+            acorn.parse(wrapped, { ecmaVersion: 2020 });
+            return { valid: true };
+        } catch (e) {
+            return { valid: false, message: e.message, pos: Math.max(0, e.pos - 29) };
+        }
+    }
+    static fallbackExtract(str) {
+        const s = str.indexOf('{'), e = str.lastIndexOf('}');
+        return (s === -1 || e === -1) ? str : str.substring(s + 1, e).trim();
+    }
+}
+
+/**
+ * ============================================================================
+ * MODULE 1: NOISE GENERATOR
+ * ============================================================================
+ */
+class NoiseMath {
+    static fract(x) { return x - Math.floor(x); }
+    static mix(a, b, t) { return a * (1 - t) + b * t; }
+    static smoothstep(t) { return t * t * (3 - 2 * t); }
+    static hash2(x, y) { return this.fract(Math.sin(x * 12.9898 + y * 78.233) * 43758.5453); }
+    static dist(x1, y1, x2, y2) { return Math.sqrt((x2-x1)**2 + (y2-y1)**2); }
+    static grad(x, y) {
+        const h = this.hash2(x, y) * 2 * Math.PI;
+        return { x: Math.cos(h), y: Math.sin(h) };
+    }
+}
+
+class NoiseGenerator {
+    constructor() {
+        this.sources = {};
+        
+        // Full Algorithm Definitions
+        const defs = {
+            // --- Classic ---
+            value: (x, y) => {
+                const i = Math.floor(x), j = Math.floor(y);
+                const f = { x: x - i, y: y - j };
+                const u = { x: NoiseMath.smoothstep(f.x), y: NoiseMath.smoothstep(f.y) };
+                return NoiseMath.mix(
+                    NoiseMath.mix(NoiseMath.hash2(i, j), NoiseMath.hash2(i + 1, j), u.x),
+                    NoiseMath.mix(NoiseMath.hash2(i, j + 1), NoiseMath.hash2(i + 1, j + 1), u.x),
+                    u.y
+                );
+            },
+            perlin: (x, y) => {
+                const i = Math.floor(x), j = Math.floor(y);
+                const f = { x: x - i, y: y - j };
+                const u = { x: NoiseMath.smoothstep(f.x), y: NoiseMath.smoothstep(f.y) };
+                const dot = (ix, iy, dx, dy) => { const g = NoiseMath.grad(ix, iy); return g.x * dx + g.y * dy; };
+                return NoiseMath.mix(
+                    NoiseMath.mix(dot(i, j, f.x, f.y), dot(i+1, j, f.x-1, f.y), u.x),
+                    NoiseMath.mix(dot(i, j+1, f.x, f.y-1), dot(i+1, j+1, f.x-1, f.y-1), u.x),
+                    u.y
+                ) * 0.5 + 0.5;
+            },
+            worley: (x, y) => {
+                const i = Math.floor(x), j = Math.floor(y);
+                const f = { x: x - i, y: y - j };
+                let minDist = 1.0;
+                for (let yOff = -1; yOff <= 1; yOff++) {
+                    for (let xOff = -1; xOff <= 1; xOff++) {
+                        const p = { x: xOff + NoiseMath.hash2(i + xOff, j + yOff), y: yOff + NoiseMath.hash2(i + xOff + 5, j + yOff + 7) };
+                        const d = NoiseMath.dist(p.x, p.y, f.x, f.y);
+                        minDist = Math.min(minDist, d);
+                    }
+                }
+                return 1.0 - minDist;
+            },
+            simplex: (x, y) => {
+                const F2 = 0.5 * (Math.sqrt(3.0) - 1.0);
+                const G2 = (3.0 - Math.sqrt(3.0)) / 6.0;
+                const s = (x + y) * F2;
+                const i = Math.floor(x + s), j = Math.floor(y + s);
+                const t = (i + j) * G2;
+                const X0 = i - t, Y0 = j - t;
+                const x0 = x - X0, y0 = y - Y0;
+                let i1 = x0 > y0 ? 1 : 0, j1 = x0 > y0 ? 0 : 1;
+                const x1 = x0 - i1 + G2, y1 = y0 - j1 + G2;
+                const x2 = x0 - 1.0 + 2.0 * G2, y2 = y0 - 1.0 + 2.0 * G2;
+                const contrib = (ix, iy, dx, dy) => {
+                    let t = 0.5 - dx*dx - dy*dy;
+                    if(t < 0) return 0; t *= t;
+                    const g = NoiseMath.grad(ix, iy);
+                    return t * t * (g.x * dx + g.y * dy);
+                };
+                const n = contrib(i, j, x0, y0) + contrib(i+i1, j+j1, x1, y1) + contrib(i+1, j+1, x2, y2);
+                return 40.0 * n * 0.5 + 0.5;
+            },
+            curl: (x, y) => {
+                const eps = 0.1;
+                const n1 = this.perlin(x, y + eps), n2 = this.perlin(x, y - eps);
+                const n3 = this.perlin(x + eps, y), n4 = this.perlin(x - eps, y);
+                const dx = (n3 - n4) / (2 * eps), dy = (n1 - n2) / (2 * eps);
+                return (Math.atan2(dx, -dy) + Math.PI) / (2 * Math.PI);
+            },
+            // --- Trig ---
+            sin_basic: (x, y) => Math.sin(x) * 0.5 + 0.5,
+            sin_plasma: (x, y) => {
+                const v = Math.sin(x) + Math.sin(y) + Math.sin((x + y) * 0.5) + Math.sin(Math.sqrt(x*x + y*y));
+                return v / 4 * 0.5 + 0.5;
+            },
+            sin_lattice: (x, y) => (Math.sin(x) * Math.cos(y)) * 0.5 + 0.5,
+            sin_interference: (x, y) => {
+                const v1 = Math.sin(x * 0.5 + y * 0.5);
+                const v2 = Math.sin(x * 0.6 - y * 0.4 + 2.0);
+                return (v1 + v2) / 2 * 0.5 + 0.5;
+            },
+            sin_rings: (x, y) => Math.sin(Math.sqrt(x*x + y*y)) * 0.5 + 0.5,
+            // --- Experimental ---
+            trig_warp: (x, y) => {
+                const qx = x + Math.sin(y); const qy = y + Math.cos(x);
+                return Math.sin(qx + qy) * 0.5 + 0.5;
+            },
+            moire: (x, y) => Math.sin(x * 10) * Math.sin(y * 8) * 0.5 + 0.5,
+            alien_circuit: (x, y) => { const v = Math.sin(x*x ^ y*y); return v * 0.5 + 0.5; },
+            // --- Fractal ---
+            perlin_fbm: (x, y) => {
+                let v = 0, a = 0.5, f = 1.0;
+                for(let i=0; i<4; i++) { v += this.perlin(x*f, y*f) * a; a*=0.5; f*=2.0; }
+                return v * 0.8;
+            },
+            perlin_turbulence: (x, y) => {
+                let v = 0, a = 0.5, f = 1.0;
+                for(let i=0; i<4; i++) { v += Math.abs(this.perlin(x*f, y*f)*2-1) * a; a*=0.5; f*=2.0; }
+                return v;
+            },
+            perlin_ridge: (x, y) => {
+                let v = 0, a = 0.5, f = 1.0;
+                for(let i=0; i<4; i++) { let n = 1.0 - Math.abs(this.perlin(x*f, y*f)*2-1); v += n * n * a; a*=0.5; f*=2.0; }
+                return v;
+            },
+            // --- Placeholder for Custom Link ---
+            user_custom: (x, y, t) => {
+                // Default Custom Behavior (Simple Pulse)
+                return Math.sin(x * 2 + t * 2) * Math.cos(y * 2) * 0.5 + 0.5;
+            }
+        };
+
+        this.algos = {};
+        for(const k in defs) {
+            this.sources[k] = defs[k].toString();
+            // this.perlin() 等で呼べるようにインスタンスにも紐付ける
+            this[k] = this.algos[k] = defs[k].bind(this);
+        }
+    }
+
+    replace(name, bodyStr) {
+        const check = CodeParser.validate(bodyStr);
+        if (!check.valid) throw new Error(`Syntax Error at char ${check.pos}: ${check.message}`);
+        const fn = new Function('x', 'y', 't', 'M', 'N', bodyStr);
+        this.algos[name] = fn.bind(this);
+        this.sources[name] = `function(x, y, t, M, N) {\n${bodyStr}\n}`; 
+        return true;
+    }
+
+    getSourceBody(name) {
+        if (!this.sources[name]) return "// No source available";
+        return CodeParser.extractBody(this.sources[name]);
+    }
+
+    get(name) { return this.algos[name] || this.algos.value; }
+}
+
+/**
+ * ============================================================================
+ * MODULE 2, 3: VISUALIZER
+ * ============================================================================
+ */
+class TerrainSystem {
+    constructor(noiseGen) { this.noise = noiseGen; }
+    evaluate(x, y, width, config) {
+        if (config.Walls) {
+            let limitL = 0, limitR = width;
+            for(const w of config.Walls) {
+                const val = Math.sin(y * w.freq) * w.amp + w.offset;
+                if(w.side === 'left') limitL = Math.max(limitL, val);
+                if(w.side === 'right') limitR = Math.min(limitR, width - val);
+            }
+            if(config.Walls.find(w => w.side === 'left') && x < limitL) return {type:'wall', color:config.Walls.find(w => w.side === 'left').color};
+            if(config.Walls.find(w => w.side === 'right') && x > limitR) return {type:'wall', color:config.Walls.find(w => w.side === 'right').color};
+        }
+        if (config.Ground) {
+            const g = config.Ground;
+            const fn = this.noise.get(g.type);
+            const n = fn(x * g.scale, y * g.scale);
+            if(n > g.threshold) return { type: 'ground', color: g.color };
+        }
+        if (config.Background) {
+            const b = config.Background;
+            const fn = this.noise.get(b.type);
+            const n = fn(x * b.scale, y * b.scale);
+            if(n > b.threshold) return { type: 'bg', color: b.color };
+        }
+        return { type: 'none', color: null };
+    }
+}
+
+class Visualizer {
+    constructor(canvasId) {
+        this.canvas = document.getElementById(canvasId);
+        this.ctx = this.canvas.getContext('2d');
+        this.width = this.canvas.width;
+        this.height = this.canvas.height;
+    }
+    drawTerrain(sys, config, scrollY) {
+        this.ctx.fillStyle = config.clearColor || '#000';
+        this.ctx.fillRect(0,0,this.width,this.height);
+        const DOT = 4;
+        const rows = Math.ceil(this.height/DOT), cols = Math.ceil(this.width/DOT);
+        for(let r=0;r<rows;r++) {
+            const y = r*DOT;
+            const worldY = y - scrollY;
+            for(let c=0;c<cols;c++) {
+                const x = c*DOT;
+                const res = sys.evaluate(x, worldY, this.width, config);
+                if(res.type!=='none') {
+                    this.ctx.fillStyle = res.color;
+                    this.ctx.fillRect(x,y,DOT,DOT);
+                }
+            }
+        }
+    }
+    drawNoise(gen, algo, params, time) {
+        const idata = this.ctx.createImageData(this.width, this.height);
+        const data = idata.data;
+        const fn = gen.get(algo);
+        const scale = params.scale || 8;
+        for(let py=0; py<this.height; py++) {
+            for(let px=0; px<this.width; px++) {
+                const x = px/(this.width/scale);
+                const y = py/(this.height/scale);
+                let val = fn(x, y + time, Math, NoiseMath);
+                val = Math.max(0, Math.min(1, val));
+                const c = Math.floor(val * 255);
+                const idx = (px + py * this.width) * 4;
+                if(params.colorize) {
+                    data[idx] = c; data[idx+1] = 255-c; data[idx+2] = c/2; data[idx+3] = 255;
+                } else {
+                    data[idx] = c; data[idx+1] = c; data[idx+2] = c; data[idx+3] = 255;
+                }
+            }
+        }
+        this.ctx.putImageData(idata, 0, 0);
+    }
+}
+
+/**
+ * ============================================================================
+ * APP CONTROLLER
+ * ============================================================================
+ */
+const App = {
+    noiseGen: new NoiseGenerator(),
+    terrainSys: null,
+    views: {},
+    state: { scrollY: 0, activeTab: 'editor', terrainConfig: {}, noiseConfig: {} },
+    presets: {
+        terrain: {
+            // --- Link Demo ---
+            '🔗 Link to Noise Lab': {
+                // This uses the 'user_custom' algo. 
+                // Go to Noise Lab, edit 'user_custom', and see this change!
+                Background: { type: 'user_custom', scale: 0.05, threshold: 0.2, color: '#111122' },
+                Ground: { type: 'user_custom', scale: 0.1, threshold: 0.6, color: '#00ff88' },
+                Walls: []
+            },
+            // --- Restored Presets ---
+            'space_debris': {
+                Background: { type: 'value', scale: 0.02, threshold: 0.6, color: '#112233' },
+                Ground: { type: 'value', scale: 0.05, threshold: 0.85, color: '#444455' },
+                Walls: []
+            },
+            'clouds': {
+                Background: { type: 'simplex', scale: 0.01, threshold: 0.4, color: '#8888aa' },
+                Ground: { type: 'simplex', scale: 0.03, threshold: 0.7, color: '#ffffff' },
+                Walls: []
+            },
+            'cavern': {
+                Background: { type: 'perlin', scale: 0.02, threshold: 0.5, color: '#221100' },
+                Ground: { type: 'perlin', scale: 0.04, threshold: 0.8, color: '#553311' },
+                Walls: [
+                    { side: 'left', amp: 30, freq: 0.015, offset: 50, color: '#442211' },
+                    { side: 'right', amp: 30, freq: 0.015, offset: 50, color: '#442211' }
+                ]
+            },
+            'alien_hive': {
+                Background: { type: 'worley', scale: 0.05, threshold: 0.7, color: '#220011' },
+                Ground: { type: 'worley', scale: 0.08, threshold: 0.6, color: '#552244' },
+                Walls: []
+            },
+            'retro_plasma': {
+                Background: { type: 'sin_lattice', scale: 0.1, threshold: 0.5, color: '#220033' },
+                Ground: { type: 'sin_plasma', scale: 0.05, threshold: 0.6, color: '#ff00cc' },
+                Walls: []
+            },
+            'cyber_circuit': {
+                Background: { type: 'alien_circuit', scale: 0.05, threshold: 0.2, color: '#001100' },
+                Ground: { type: 'moire', scale: 0.15, threshold: 0.85, color: '#00ff00' },
+                Walls: []
+            },
+            'fractal_mountains': {
+                Background: { type: 'perlin_fbm', scale: 0.01, threshold: 0.4, color: '#334455' },
+                Ground: { type: 'perlin_ridge', scale: 0.02, threshold: 0.75, color: '#aaeeff' },
+                Walls: []
+            },
+            'warp_zone': {
+                Background: { type: 'trig_warp', scale: 0.03, threshold: 0.5, color: '#440000' },
+                Ground: { type: 'sin_interference', scale: 0.04, threshold: 0.6, color: '#ffaa00' },
+                Walls: []
+            }
+        }
+    },
+
+    init() {
+        this.terrainSys = new TerrainSystem(this.noiseGen);
+        this.views.terrain = new Visualizer('canvas-terrain');
+        this.views.noise = new Visualizer('canvas-noise');
+        
+        document.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click', () => {
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            btn.classList.add('active');
+            document.getElementById(btn.dataset.target).classList.add('active');
+            this.state.activeTab = btn.dataset.target;
+        }));
+
+        this.initTerrainUI();
+        this.initNoiseUI();
+        requestAnimationFrame(t => this.loop(t));
+    },
+
+    initTerrainUI() {
+        const sel = document.getElementById('terrain-preset');
+        const txt = document.getElementById('input-terrain');
+        Object.keys(this.presets.terrain).forEach(k => sel.add(new Option(k, k)));
+        
+        const load = () => {
+            this.state.terrainConfig = JSON.parse(JSON.stringify(this.presets.terrain[sel.value]));
+            txt.value = JSON.stringify(this.state.terrainConfig, null, 4);
+        };
+        sel.addEventListener('change', load);
+        document.getElementById('btn-apply-terrain').addEventListener('click', () => {
+            try { this.state.terrainConfig = JSON.parse(txt.value); } catch(e) {}
+        });
+        load();
+    },
+
+    initNoiseUI() {
+        const sel = document.getElementById('select-algo');
+        const txt = document.getElementById('input-noise');
+        const editor = document.getElementById('code-editor');
+        const status = document.getElementById('compile-status');
+
+        const refreshList = () => {
+            const current = sel.value;
+            sel.innerHTML = '';
+            Object.keys(this.noiseGen.algos).forEach(k => sel.add(new Option(k, k)));
+            if(current && this.noiseGen.algos[current]) sel.value = current;
+        };
+        refreshList();
+
+        const updateView = () => {
+            const name = sel.value;
+            this.state.noiseConfig = { scale: 8, speed: 1.0, colorize: false };
+            txt.value = JSON.stringify(this.state.noiseConfig, null, 4);
+            editor.value = this.noiseGen.getSourceBody(name);
+            editor.classList.remove('error');
+            status.innerText = "AST: Ready to parse.";
+            status.className = "status-msg status-ok";
+        };
+
+        const apply = () => {
+            try {
+                this.state.noiseConfig = JSON.parse(txt.value);
+                this.noiseGen.replace(sel.value, editor.value);
+                editor.classList.remove('error');
+                status.innerText = "AST: Valid Syntax. Compiled Successfully.";
+                status.className = "status-msg status-ok";
+            } catch(e) {
+                editor.classList.add('error');
+                status.innerText = e.message;
+                status.className = "status-msg status-err";
+            }
+        };
+
+        sel.addEventListener('change', updateView);
+        document.getElementById('btn-apply-noise').addEventListener('click', apply);
+        updateView();
+    },
+
+    loop(t) {
+        const time = t * 0.001;
+        if(this.state.activeTab === 'editor') {
+            this.state.scrollY -= 2;
+            this.views.terrain.drawTerrain(this.terrainSys, this.state.terrainConfig, this.state.scrollY);
+        } else {
+            this.views.noise.drawNoise(this.noiseGen, document.getElementById('select-algo').value, this.state.noiseConfig, time);
+        }
+        requestAnimationFrame(t => this.loop(t));
+    }
+};
+
+App.init();
+</script>
+</body>
+</html>
