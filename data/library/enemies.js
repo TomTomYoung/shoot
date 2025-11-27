@@ -101,4 +101,101 @@
             }
         }
     });
+    // Standard Enemies (from GameData)
+    GameData.registerEnemy('zako', {
+        hp: 3, radius: 10, color: '#f88',
+        ai: (me, ctx) => {
+            me.local.y += 3;
+            me.local.x += Math.sin(me.age * 0.1) * 2;
+            if (me.age % 60 === 0) {
+                const playerPos = ctx.getPlayerPosition();
+                const vx = (playerPos.x - me.world.x) * 0.01;
+                const vy = (playerPos.y - me.world.y) * 0.01;
+                ctx.spawn(GameData.Types.E_BULLET, me.world.x, me.world.y, {
+                    vx: vx, vy: vy, radius: 4, color: '#ff0'
+                });
+            }
+        }
+    });
+
+    GameData.registerEnemy('spawner', {
+        hp: 50, radius: 20, color: '#f0f',
+        ai: (me, ctx) => {
+            me.local.angle += 0.05;
+            if (me.age % 120 === 0) {
+                ctx.spawnEnemy('zako', me.world.x, me.world.y + 20);
+                ctx.spawnParticle(me.world.x, me.world.y, '#f0f', 5);
+            }
+        }
+    });
+    // --- New Enemies ---
+
+    // Sniper: Shoots fast needles at the player
+    GameData.registerEnemy('sniper', {
+        hp: 8, radius: 12, color: '#aa0', score: 300,
+        ai: (me, ctx) => {
+            me.local.y += 1;
+            // Aiming behavior
+            if (me.age % 120 === 60) {
+                // Warning flash or sound could go here
+            }
+            if (me.age % 120 === 0) {
+                const p = ctx.getPlayerPosition();
+                const angle = Math.atan2(p.y - me.world.y, p.x - me.world.x);
+                ctx.spawn(GameData.Types.E_BULLET, me.world.x, me.world.y, {
+                    vx: Math.cos(angle) * 8, vy: Math.sin(angle) * 8,
+                    radius: 2, color: '#ff0', shape: 'line', length: 15
+                });
+            }
+        }
+    });
+
+    // Gatling: Shoots a stream of bullets
+    GameData.registerEnemy('gatling', {
+        hp: 20, radius: 18, color: '#555', score: 400,
+        ai: (me, ctx) => {
+            me.local.y += 0.5;
+            if (me.age > 60 && me.age < 200 && me.age % 5 === 0) {
+                ctx.spawn(GameData.Types.E_BULLET, me.world.x, me.world.y + 10, {
+                    vx: (Math.random() - 0.5) * 1, vy: 5,
+                    radius: 3, color: '#fa0'
+                });
+            }
+        }
+    });
+
+    // Star Spinner: Spiraling star bullets
+    GameData.registerEnemy('star_spinner', {
+        hp: 15, radius: 15, color: '#d0d', score: 350,
+        ai: (me, ctx) => {
+            me.local.y += 1;
+            me.local.angle += 0.1;
+            if (me.age % 10 === 0) {
+                const angle = me.age * 0.2;
+                for (let i = 0; i < 2; i++) {
+                    const a = angle + i * Math.PI;
+                    ctx.spawn(GameData.Types.E_BULLET, me.world.x, me.world.y, {
+                        vx: Math.cos(a) * 3, vy: Math.sin(a) * 3,
+                        radius: 5, color: '#ff8', shape: 'star'
+                    });
+                }
+            }
+        }
+    });
+
+    // Heavy Tank: High HP, slow, shoots plasma
+    GameData.registerEnemy('heavy_tank', {
+        hp: 60, radius: 25, color: '#040', score: 600,
+        ai: (me, ctx) => {
+            me.local.y += 0.2;
+            if (me.age % 180 === 0) {
+                const p = ctx.getPlayerPosition();
+                const angle = Math.atan2(p.y - me.world.y, p.x - me.world.x);
+                ctx.spawn(GameData.Types.E_BULLET, me.world.x, me.world.y, {
+                    vx: Math.cos(angle) * 2, vy: Math.sin(angle) * 2,
+                    radius: 10, color: '#a0f', shape: 'circle', pulse: true
+                });
+            }
+        }
+    });
 })();

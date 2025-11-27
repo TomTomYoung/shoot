@@ -27,4 +27,41 @@
         homing: true,
         speed: 3
     });
+    // Needle
+    GameData.registerBullet('needle', {
+        type: GameData.Types.E_BULLET,
+        color: '#ff0',
+        radius: 2,
+        length: 10,
+        shape: 'line', // Engine needs to support this, or just use it as metadata
+        speed: 6
+    });
+
+    // Star
+    GameData.registerBullet('star', {
+        type: GameData.Types.E_BULLET,
+        color: '#ff8',
+        radius: 6,
+        shape: 'star',
+        speed: 3
+    });
+
+    // Laser
+    GameData.registerBullet('laser', {
+        type: GameData.Types.E_BULLET,
+        color: '#0ff',
+        radius: 3,
+        length: 20,
+        shape: 'rect',
+        speed: 10
+    });
+
+    // Plasma
+    GameData.registerBullet('plasma', {
+        type: GameData.Types.E_BULLET,
+        color: '#a0f',
+        radius: 8,
+        shape: 'circle',
+        pulse: true
+    });
 })();

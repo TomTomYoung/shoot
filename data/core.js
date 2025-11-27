@@ -18,7 +18,8 @@ const GameData = {
         Bosses: {},
         Bullets: {},
         Terrains: {},
-        Scripts: {}
+        Scripts: {},
+        Noise: {}
     },
     CurrentPack: null,
 
@@ -44,6 +45,10 @@ const GameData = {
 
     registerScript: (id, def) => {
         GameData.Library.Scripts[id] = def;
+    },
+
+    registerNoise: (id, def) => {
+        GameData.Library.Noise[id] = def;
     },
 
     loadPack: (name) => {

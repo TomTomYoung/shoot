@@ -1,0 +1,912 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Ultimate Game Lab (Terrain + Noise + Bullet + Enemy)</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/acorn/8.11.3/acorn.min.js"></script>
+    <style>
+        :root {
+            --bg: #111;
+            --panel: #1a1a1a;
+            --border: #333;
+            --accent: #0066cc;
+            --error: #cc3300;
+            --text: #eee;
+            --code: #aaddff;
+        }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Consolas', monospace;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Layout */
+        #header {
+            background: #222;
+            padding: 0 10px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            gap: 2px;
+        }
+
+        .tab-btn {
+            background: #333;
+            border: none;
+            color: #888;
+            padding: 10px 20px;
+            cursor: pointer;
+            font-family: inherit;
+            margin-top: 5px;
+            border-radius: 5px 5px 0 0;
+            transition: 0.2s;
+        }
+
+        .tab-btn.active {
+            background: #444;
+            color: #fff;
+            font-weight: bold;
+        }
+
+        .tab-content {
+            display: none;
+            flex: 1;
+            height: calc(100vh - 40px);
+            overflow: hidden;
+        }
+
+        .tab-content.active {
+            display: flex;
+        }
+
+        /* UI Components */
+        .pane-sidebar {
+            width: 450px;
+            background: var(--panel);
+            display: flex;
+            flex-direction: column;
+            border-right: 1px solid var(--border);
+            padding: 10px;
+            overflow-y: auto;
+        }
+
+        .pane-preview {
+            flex: 1;
+            background: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+        }
+
+        textarea {
+            background: #111;
+            color: #0f0;
+            border: 1px solid var(--border);
+            padding: 10px;
+            font-family: 'Consolas', monospace;
+            font-size: 13px;
+            resize: none;
+            line-height: 1.4;
+            tab-size: 4;
+            outline: none;
+        }
+
+        .code-editor {
+            background: #0d1117;
+            color: #e6edf3;
+            border: 1px solid #30363d;
+            flex: 1;
+            min-height: 200px;
+            white-space: pre;
+            overflow-x: auto;
+            font-size: 12px;
+        }
+
+        .code-editor:focus {
+            border-color: var(--accent);
+        }
+
+        .code-editor.error {
+            border-color: var(--error);
+            background: #1a0505;
+        }
+
+        h3 {
+            margin: 15px 0 5px;
+            font-size: 14px;
+            color: #aaa;
+            border-bottom: 1px solid #333;
+            padding-bottom: 2px;
+        }
+
+        select,
+        button {
+            background: #333;
+            color: #fff;
+            border: 1px solid #555;
+            padding: 5px;
+            cursor: pointer;
+            font-family: inherit;
+        }
+
+        button.primary {
+            background: var(--accent);
+            border-color: #0088ff;
+        }
+
+        .row {
+            display: flex;
+            gap: 5px;
+            margin-bottom: 5px;
+        }
+
+        .flex-1 {
+            flex: 1;
+        }
+
+        .status-msg {
+            font-size: 11px;
+            margin-top: 5px;
+            min-height: 1.4em;
+        }
+
+        .status-ok {
+            color: #0f0;
+        }
+
+        .status-err {
+            color: #f55;
+        }
+
+        .tip {
+            font-size: 11px;
+            color: #888;
+            margin-bottom: 5px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="header">
+        <button class="tab-btn active" data-target="editor">1. Terrain Editor</button>
+        <button class="tab-btn" data-target="gallery">2. Noise Lab</button>
+        <button class="tab-btn" data-target="bullet-sim">3. Bullet Sim</button>
+        <button class="tab-btn" data-target="enemy-sim">4. Enemy Sim</button>
+    </div>
+
+    <!-- TAB 1: Terrain Editor -->
+    <div id="editor" class="tab-content active">
+        <div class="pane-sidebar">
+            <h3>Terrain Presets</h3>
+            <div class="row">
+                <select id="terrain-preset" class="flex-1"></select>
+                <button class="primary" id="btn-apply-terrain">Apply</button>
+            </div>
+            <div class="tip">Select "🔗 Link to Noise Lab" to use the algo from Tab 2.</div>
+            <textarea id="input-terrain" spellcheck="false" class="flex-1"></textarea>
+        </div>
+        <div class="pane-preview">
+            <canvas id="canvas-terrain" width="600" height="800"></canvas>
+        </div>
+    </div>
+
+    <!-- TAB 2: Noise Lab -->
+    <div id="gallery" class="tab-content">
+        <div class="pane-sidebar">
+            <h3>Algorithm Selection</h3>
+            <div class="row">
+                <select id="select-algo" class="flex-1"></select>
+            </div>
+
+            <h3>Parameters</h3>
+            <textarea id="input-noise" spellcheck="false" style="height:80px; min-height:80px; color:#8f8;"></textarea>
+
+            <h3>Source Code (Live AST Parsing)</h3>
+            <textarea id="code-editor" class="code-editor" spellcheck="false"></textarea>
+
+            <div id="compile-status" class="status-msg status-ok">Ready.</div>
+            <button class="primary" id="btn-apply-noise" style="width:100%; margin-top:5px; height: 40px;">
+                AST CHECK & COMPILE
+            </button>
+        </div>
+        <div class="pane-preview">
+            <canvas id="canvas-noise" width="600" height="600"></canvas>
+        </div>
+    </div>
+
+    <!-- TAB 3: Bullet Simulator -->
+    <div id="bullet-sim" class="tab-content">
+        <div class="pane-sidebar">
+            <h3>Player Config</h3>
+            <textarea id="input-player-config" spellcheck="false" style="height:100px; color:#8f8;">{
+    "speed": 4,
+    "fireRate": 5,
+    "color": "#0ff"
+}</textarea>
+
+            <h3>Bullet Config</h3>
+            <textarea id="input-bullet-config" spellcheck="false" style="height:150px; color:#8f8;">{
+    "speed": 8,
+    "angleOffset": 0,
+    "count": 3,
+    "spread": 15,
+    "color": "#ff0",
+    "size": 4
+}</textarea>
+
+            <div class="tip">Controls: Arrow Keys to Move, Z to Shoot</div>
+            <button class="primary" id="btn-apply-bullet">Apply Config</button>
+        </div>
+        <div class="pane-preview">
+            <canvas id="canvas-bullet" width="600" height="600"></canvas>
+        </div>
+    </div>
+
+    <!-- TAB 4: Enemy Simulator -->
+    <div id="enemy-sim" class="tab-content">
+        <div class="pane-sidebar">
+            <h3>Enemy Config</h3>
+            <textarea id="input-enemy-config" spellcheck="false" style="height:100px; color:#8f8;">{
+    "hp": 50,
+    "radius": 20,
+    "color": "#f00"
+}</textarea>
+
+            <h3>AI Logic (AST Parsed)</h3>
+            <textarea id="input-enemy-ai" class="code-editor" spellcheck="false">
+// 'me' is the enemy object
+// 'ctx' is the game context (mocked)
+
+me.local.y += 1.5;
+me.local.x += Math.sin(me.age * 0.05) * 2;
+me.local.angle += 0.05;
+
+if (me.age % 60 === 0) {
+    // Fire a bullet at the player
+    const p = ctx.getPlayerPosition();
+    const angle = Math.atan2(p.y - me.world.y, p.x - me.world.x);
+    const vx = Math.cos(angle) * 4;
+    const vy = Math.sin(angle) * 4;
+    
+    ctx.spawn(3, me.world.x, me.world.y, {
+        vx: vx, vy: vy, radius: 6, color: '#ff0'
+    });
+}
+</textarea>
+            <div id="enemy-compile-status" class="status-msg status-ok">Ready.</div>
+            <button class="primary" id="btn-apply-enemy">AST CHECK & COMPILE</button>
+            <button id="btn-reset-enemy" style="margin-top:5px;">Reset Enemy</button>
+        </div>
+        <div class="pane-preview">
+            <canvas id="canvas-enemy" width="600" height="600"></canvas>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * ============================================================================
+         * MODULE 0: AST PARSER HELPER (Uses Acorn)
+         * ============================================================================
+         */
+        class CodeParser {
+            static extractBody(fnString) {
+                if (!window.acorn) return this.fallbackExtract(fnString);
+                try {
+                    let codeToParse = fnString.trim();
+                    if (!codeToParse.startsWith('function') && !codeToParse.startsWith('(')) {
+                        codeToParse = 'function ' + codeToParse;
+                    }
+                    const ast = acorn.parse(codeToParse, { ecmaVersion: 2020 });
+                    let bodyNode = null;
+                    const walk = (node) => {
+                        if (bodyNode) return;
+                        if (node.type === 'BlockStatement') { bodyNode = node; return; }
+                        for (const key in node) {
+                            if (node[key] && typeof node[key] === 'object') {
+                                if (Array.isArray(node[key])) node[key].forEach(walk);
+                                else walk(node[key]);
+                            }
+                        }
+                    };
+                    walk(ast);
+                    if (bodyNode) return codeToParse.substring(bodyNode.start + 1, bodyNode.end - 1).trim();
+                } catch (e) { console.warn("AST Fallback"); }
+                return this.fallbackExtract(fnString);
+            }
+            static validate(bodyCode) {
+                if (!window.acorn) return { valid: true };
+                const wrapped = `function check(me, ctx, x, y, t, M, N) { ${bodyCode} }`;
+                try {
+                    acorn.parse(wrapped, { ecmaVersion: 2020 });
+                    return { valid: true };
+                } catch (e) {
+                    return { valid: false, message: e.message, pos: Math.max(0, e.pos - 37) };
+                }
+            }
+            static fallbackExtract(str) {
+                const s = str.indexOf('{'), e = str.lastIndexOf('}');
+                return (s === -1 || e === -1) ? str : str.substring(s + 1, e).trim();
+            }
+        }
+
+        /**
+         * ============================================================================
+         * MODULE 1: NOISE GENERATOR
+         * ============================================================================
+         */
+        class NoiseMath {
+            static fract(x) { return x - Math.floor(x); }
+            static mix(a, b, t) { return a * (1 - t) + b * t; }
+            static smoothstep(t) { return t * t * (3 - 2 * t); }
+            static hash2(x, y) { return this.fract(Math.sin(x * 12.9898 + y * 78.233) * 43758.5453); }
+            static dist(x1, y1, x2, y2) { return Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2); }
+            static grad(x, y) {
+                const h = this.hash2(x, y) * 2 * Math.PI;
+                return { x: Math.cos(h), y: Math.sin(h) };
+            }
+        }
+
+        class NoiseGenerator {
+            constructor() {
+                this.sources = {};
+                const defs = {
+                    value: (x, y) => {
+                        const i = Math.floor(x), j = Math.floor(y);
+                        const f = { x: x - i, y: y - j };
+                        const u = { x: NoiseMath.smoothstep(f.x), y: NoiseMath.smoothstep(f.y) };
+                        return NoiseMath.mix(
+                            NoiseMath.mix(NoiseMath.hash2(i, j), NoiseMath.hash2(i + 1, j), u.x),
+                            NoiseMath.mix(NoiseMath.hash2(i, j + 1), NoiseMath.hash2(i + 1, j + 1), u.x),
+                            u.y
+                        );
+                    },
+                    perlin: (x, y) => {
+                        const i = Math.floor(x), j = Math.floor(y);
+                        const f = { x: x - i, y: y - j };
+                        const u = { x: NoiseMath.smoothstep(f.x), y: NoiseMath.smoothstep(f.y) };
+                        const dot = (ix, iy, dx, dy) => { const g = NoiseMath.grad(ix, iy); return g.x * dx + g.y * dy; };
+                        return NoiseMath.mix(
+                            NoiseMath.mix(dot(i, j, f.x, f.y), dot(i + 1, j, f.x - 1, f.y), u.x),
+                            NoiseMath.mix(dot(i, j + 1, f.x, f.y - 1), dot(i + 1, j + 1, f.x - 1, f.y - 1), u.x),
+                            u.y
+                        ) * 0.5 + 0.5;
+                    },
+                    user_custom: (x, y, t) => {
+                        return Math.sin(x * 2 + t * 2) * Math.cos(y * 2) * 0.5 + 0.5;
+                    }
+                };
+                this.algos = {};
+                for (const k in defs) {
+                    this.sources[k] = defs[k].toString();
+                    this[k] = this.algos[k] = defs[k].bind(this);
+                }
+            }
+            replace(name, bodyStr) {
+                const check = CodeParser.validate(bodyStr);
+                if (!check.valid) throw new Error(`Syntax Error at char ${check.pos}: ${check.message}`);
+                const fn = new Function('x', 'y', 't', 'M', 'N', bodyStr);
+                this.algos[name] = fn.bind(this);
+                this.sources[name] = `function(x, y, t, M, N) {\n${bodyStr}\n}`;
+                return true;
+            }
+            getSourceBody(name) {
+                if (!this.sources[name]) return "// No source available";
+                return CodeParser.extractBody(this.sources[name]);
+            }
+            get(name) { return this.algos[name] || this.algos.value; }
+        }
+
+        /**
+         * ============================================================================
+         * MODULE 2: TERRAIN SYSTEM
+         * ============================================================================
+         */
+        class TerrainSystem {
+            constructor(noiseGen) { this.noise = noiseGen; }
+            evaluate(x, y, width, config) {
+                if (config.Walls) {
+                    let limitL = 0, limitR = width;
+                    for (const w of config.Walls) {
+                        const val = Math.sin(y * w.freq) * w.amp + w.offset;
+                        if (w.side === 'left') limitL = Math.max(limitL, val);
+                        if (w.side === 'right') limitR = Math.min(limitR, width - val);
+                    }
+                    if (config.Walls.find(w => w.side === 'left') && x < limitL) return { type: 'wall', color: config.Walls.find(w => w.side === 'left').color };
+                    if (config.Walls.find(w => w.side === 'right') && x > limitR) return { type: 'wall', color: config.Walls.find(w => w.side === 'right').color };
+                }
+                if (config.Ground) {
+                    const g = config.Ground;
+                    const fn = this.noise.get(g.type);
+                    const n = fn(x * g.scale, y * g.scale);
+                    if (n > g.threshold) return { type: 'ground', color: g.color };
+                }
+                if (config.Background) {
+                    const b = config.Background;
+                    const fn = this.noise.get(b.type);
+                    const n = fn(x * b.scale, y * b.scale);
+                    if (n > b.threshold) return { type: 'bg', color: b.color };
+                }
+                return { type: 'none', color: null };
+            }
+        }
+
+        class Visualizer {
+            constructor(canvasId) {
+                this.canvas = document.getElementById(canvasId);
+                this.ctx = this.canvas.getContext('2d');
+                this.width = this.canvas.width;
+                this.height = this.canvas.height;
+            }
+            drawTerrain(sys, config, scrollY) {
+                this.ctx.fillStyle = config.clearColor || '#000';
+                this.ctx.fillRect(0, 0, this.width, this.height);
+                const DOT = 4;
+                const rows = Math.ceil(this.height / DOT), cols = Math.ceil(this.width / DOT);
+                for (let r = 0; r < rows; r++) {
+                    const y = r * DOT;
+                    const worldY = y - scrollY;
+                    for (let c = 0; c < cols; c++) {
+                        const x = c * DOT;
+                        const res = sys.evaluate(x, worldY, this.width, config);
+                        if (res.type !== 'none') {
+                            this.ctx.fillStyle = res.color;
+                            this.ctx.fillRect(x, y, DOT, DOT);
+                        }
+                    }
+                }
+            }
+            drawNoise(gen, algo, params, time) {
+                const idata = this.ctx.createImageData(this.width, this.height);
+                const data = idata.data;
+                const fn = gen.get(algo);
+                const scale = params.scale || 8;
+                for (let py = 0; py < this.height; py++) {
+                    for (let px = 0; px < this.width; px++) {
+                        const x = px / (this.width / scale);
+                        const y = py / (this.height / scale);
+                        let val = fn(x, y + time, Math, NoiseMath);
+                        val = Math.max(0, Math.min(1, val));
+                        const c = Math.floor(val * 255);
+                        const idx = (px + py * this.width) * 4;
+                        if (params.colorize) {
+                            data[idx] = c; data[idx + 1] = 255 - c; data[idx + 2] = c / 2; data[idx + 3] = 255;
+                        } else {
+                            data[idx] = c; data[idx + 1] = c; data[idx + 2] = c; data[idx + 3] = 255;
+                        }
+                    }
+                }
+                this.ctx.putImageData(idata, 0, 0);
+            }
+        }
+
+        /**
+         * ============================================================================
+         * MODULE 3: BULLET SIMULATOR
+         * ============================================================================
+         */
+        class BulletSim {
+            constructor(canvasId) {
+                this.canvas = document.getElementById(canvasId);
+                this.ctx = this.canvas.getContext('2d');
+                this.width = this.canvas.width;
+                this.height = this.canvas.height;
+                this.bullets = [];
+                this.player = { x: 300, y: 500, cooldown: 0 };
+                this.keys = {};
+
+                window.addEventListener('keydown', e => this.keys[e.key] = true);
+                window.addEventListener('keyup', e => this.keys[e.key] = false);
+            }
+
+            update(playerConfig, bulletConfig) {
+                // Player Movement
+                if (this.keys['ArrowLeft']) this.player.x -= playerConfig.speed;
+                if (this.keys['ArrowRight']) this.player.x += playerConfig.speed;
+                if (this.keys['ArrowUp']) this.player.y -= playerConfig.speed;
+                if (this.keys['ArrowDown']) this.player.y += playerConfig.speed;
+
+                // Clamp
+                this.player.x = Math.max(10, Math.min(this.width - 10, this.player.x));
+                this.player.y = Math.max(10, Math.min(this.height - 10, this.player.y));
+
+                // Shooting
+                if (this.player.cooldown > 0) this.player.cooldown--;
+                if (this.keys['z'] && this.player.cooldown <= 0) {
+                    this.player.cooldown = playerConfig.fireRate;
+                    this.spawnBullets(bulletConfig);
+                }
+
+                // Update Bullets
+                this.bullets.forEach(b => {
+                    b.x += b.vx;
+                    b.y += b.vy;
+                });
+                this.bullets = this.bullets.filter(b => b.x > 0 && b.x < this.width && b.y > 0 && b.y < this.height);
+            }
+
+            spawnBullets(config) {
+                const count = config.count || 1;
+                const spread = config.spread || 0;
+                const baseAngle = -90 + (config.angleOffset || 0);
+                const startAngle = baseAngle - (spread * (count - 1)) / 2;
+
+                for (let i = 0; i < count; i++) {
+                    const angleDeg = count > 1 ? startAngle + i * spread : baseAngle;
+                    const angleRad = angleDeg * Math.PI / 180;
+                    this.bullets.push({
+                        x: this.player.x,
+                        y: this.player.y,
+                        vx: Math.cos(angleRad) * config.speed,
+                        vy: Math.sin(angleRad) * config.speed,
+                        color: config.color || '#ff0',
+                        size: config.size || 4
+                    });
+                }
+            }
+
+            draw(playerConfig) {
+                this.ctx.fillStyle = '#000';
+                this.ctx.fillRect(0, 0, this.width, this.height);
+
+                // Draw Player
+                this.ctx.fillStyle = playerConfig.color || '#0ff';
+                this.ctx.beginPath();
+                this.ctx.moveTo(this.player.x, this.player.y - 15);
+                this.ctx.lineTo(this.player.x - 10, this.player.y + 10);
+                this.ctx.lineTo(this.player.x + 10, this.player.y + 10);
+                this.ctx.fill();
+
+                // Draw Bullets
+                this.bullets.forEach(b => {
+                    this.ctx.fillStyle = b.color;
+                    this.ctx.beginPath();
+                    this.ctx.arc(b.x, b.y, b.size, 0, Math.PI * 2);
+                    this.ctx.fill();
+                });
+            }
+        }
+
+        /**
+         * ============================================================================
+         * MODULE 4: ENEMY SIMULATOR
+         * ============================================================================
+         */
+        class EnemySim {
+            constructor(canvasId) {
+                this.canvas = document.getElementById(canvasId);
+                this.ctx = this.canvas.getContext('2d');
+                this.width = this.canvas.width;
+                this.height = this.canvas.height;
+                this.enemy = null;
+                this.bullets = [];
+                this.particles = [];
+                this.aiFunction = null;
+                this.age = 0;
+            }
+
+            reset(config) {
+                this.enemy = {
+                    world: { x: this.width / 2, y: 100 },
+                    local: { x: 0, y: 0, angle: 0 },
+                    age: 0,
+                    hp: config.hp || 50,
+                    radius: config.radius || 20,
+                    color: config.color || '#f00'
+                };
+                this.bullets = [];
+                this.particles = [];
+                this.age = 0;
+            }
+
+            setAI(code) {
+                try {
+                    const check = CodeParser.validate(code);
+                    if (!check.valid) throw new Error(`Syntax Error: ${check.message}`);
+                    // Create function: (me, ctx)
+                    this.aiFunction = new Function('me', 'ctx', code);
+                    return { success: true };
+                } catch (e) {
+                    return { success: false, error: e.message };
+                }
+            }
+
+            update() {
+                if (!this.enemy || !this.aiFunction) return;
+
+                this.enemy.age++;
+                this.age++;
+
+                // Mock Context
+                const mockCtx = {
+                    getPlayerPosition: () => ({ x: this.width / 2, y: this.height - 100 }), // Stationary target
+                    spawn: (type, x, y, opts) => {
+                        // Type 3 = E_BULLET
+                        this.bullets.push({
+                            x: x, y: y,
+                            vx: opts.vx || 0, vy: opts.vy || 0,
+                            radius: opts.radius || 4,
+                            color: opts.color || '#ff0'
+                        });
+                    },
+                    spawnParticle: (x, y, color, count) => {
+                        for (let i = 0; i < count; i++) {
+                            this.particles.push({
+                                x: x, y: y,
+                                vx: (Math.random() - 0.5) * 5, vy: (Math.random() - 0.5) * 5,
+                                life: 30, color: color
+                            });
+                        }
+                    }
+                };
+
+                try {
+                    this.aiFunction(this.enemy, mockCtx);
+                } catch (e) {
+                    console.error("AI Runtime Error", e);
+                }
+
+                // Apply local to world (simplified)
+                // In real engine, local is relative to parent, but here we just treat local as offsets or absolute if no parent
+                // Let's assume local x/y are absolute positions for this sim to keep it simple, 
+                // OR we can treat them as delta. 
+                // The provided AI example uses `me.local.y += ...`, implying it accumulates.
+                // So we just sync world to local for visualization.
+
+                // Actually, in the real engine, 'local' is the primary state, and 'world' is derived.
+                // Let's initialize local with world pos.
+                if (this.enemy.age === 1) {
+                    this.enemy.local.x = this.enemy.world.x;
+                    this.enemy.local.y = this.enemy.world.y;
+                }
+
+                this.enemy.world.x = this.enemy.local.x;
+                this.enemy.world.y = this.enemy.local.y;
+
+                // Update Bullets
+                this.bullets.forEach(b => { b.x += b.vx; b.y += b.vy; });
+                this.bullets = this.bullets.filter(b => b.x > 0 && b.x < this.width && b.y > 0 && b.y < this.height);
+
+                // Update Particles
+                this.particles.forEach(p => { p.x += p.vx; p.y += p.vy; p.life--; });
+                this.particles = this.particles.filter(p => p.life > 0);
+            }
+
+            draw() {
+                this.ctx.fillStyle = '#111';
+                this.ctx.fillRect(0, 0, this.width, this.height);
+
+                // Draw Target (Player Ghost)
+                this.ctx.strokeStyle = '#333';
+                this.ctx.beginPath();
+                this.ctx.arc(this.width / 2, this.height - 100, 10, 0, Math.PI * 2);
+                this.ctx.stroke();
+
+                // Draw Enemy
+                if (this.enemy) {
+                    this.ctx.save();
+                    this.ctx.translate(this.enemy.world.x, this.enemy.world.y);
+                    this.ctx.rotate(this.enemy.local.angle || 0);
+                    this.ctx.fillStyle = this.enemy.color;
+                    this.ctx.beginPath();
+                    this.ctx.arc(0, 0, this.enemy.radius, 0, Math.PI * 2);
+                    this.ctx.fill();
+                    // Direction indicator
+                    this.ctx.fillStyle = '#fff';
+                    this.ctx.fillRect(0, -2, this.enemy.radius, 4);
+                    this.ctx.restore();
+                }
+
+                // Draw Bullets
+                this.bullets.forEach(b => {
+                    this.ctx.fillStyle = b.color;
+                    this.ctx.beginPath();
+                    this.ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
+                    this.ctx.fill();
+                });
+
+                // Draw Particles
+                this.particles.forEach(p => {
+                    this.ctx.fillStyle = p.color;
+                    this.ctx.fillRect(p.x, p.y, 2, 2);
+                });
+            }
+        }
+
+        /**
+         * ============================================================================
+         * APP CONTROLLER
+         * ============================================================================
+         */
+        const App = {
+            noiseGen: new NoiseGenerator(),
+            terrainSys: null,
+            bulletSim: null,
+            enemySim: null,
+            views: {},
+            state: {
+                scrollY: 0,
+                activeTab: 'editor',
+                terrainConfig: {},
+                noiseConfig: {},
+                playerConfig: {},
+                bulletConfig: {},
+                enemyConfig: {}
+            },
+            presets: {
+                terrain: {
+                    '🔗 Link to Noise Lab': {
+                        Background: { type: 'user_custom', scale: 0.05, threshold: 0.2, color: '#111122' },
+                        Ground: { type: 'user_custom', scale: 0.1, threshold: 0.6, color: '#00ff88' },
+                        Walls: []
+                    },
+                    'space_debris': {
+                        Background: { type: 'value', scale: 0.02, threshold: 0.6, color: '#112233' },
+                        Ground: { type: 'value', scale: 0.05, threshold: 0.85, color: '#444455' },
+                        Walls: []
+                    }
+                }
+            },
+
+            init() {
+                this.terrainSys = new TerrainSystem(this.noiseGen);
+                this.views.terrain = new Visualizer('canvas-terrain');
+                this.views.noise = new Visualizer('canvas-noise');
+                this.bulletSim = new BulletSim('canvas-bullet');
+                this.enemySim = new EnemySim('canvas-enemy');
+
+                document.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click', () => {
+                    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                    btn.classList.add('active');
+                    document.getElementById(btn.dataset.target).classList.add('active');
+                    this.state.activeTab = btn.dataset.target;
+                }));
+
+                this.initTerrainUI();
+                this.initNoiseUI();
+                this.initBulletUI();
+                this.initEnemyUI();
+
+                requestAnimationFrame(t => this.loop(t));
+            },
+
+            initTerrainUI() {
+                const sel = document.getElementById('terrain-preset');
+                const txt = document.getElementById('input-terrain');
+                Object.keys(this.presets.terrain).forEach(k => sel.add(new Option(k, k)));
+
+                const load = () => {
+                    this.state.terrainConfig = JSON.parse(JSON.stringify(this.presets.terrain[sel.value]));
+                    txt.value = JSON.stringify(this.state.terrainConfig, null, 4);
+                };
+                sel.addEventListener('change', load);
+                document.getElementById('btn-apply-terrain').addEventListener('click', () => {
+                    try { this.state.terrainConfig = JSON.parse(txt.value); } catch (e) { }
+                });
+                load();
+            },
+
+            initNoiseUI() {
+                const sel = document.getElementById('select-algo');
+                const txt = document.getElementById('input-noise');
+                const editor = document.getElementById('code-editor');
+                const status = document.getElementById('compile-status');
+
+                const refreshList = () => {
+                    const current = sel.value;
+                    sel.innerHTML = '';
+                    Object.keys(this.noiseGen.algos).forEach(k => sel.add(new Option(k, k)));
+                    if (current && this.noiseGen.algos[current]) sel.value = current;
+                };
+                refreshList();
+
+                const updateView = () => {
+                    const name = sel.value;
+                    this.state.noiseConfig = { scale: 8, speed: 1.0, colorize: false };
+                    txt.value = JSON.stringify(this.state.noiseConfig, null, 4);
+                    editor.value = this.noiseGen.getSourceBody(name);
+                    editor.classList.remove('error');
+                    status.innerText = "AST: Ready to parse.";
+                    status.className = "status-msg status-ok";
+                };
+
+                const apply = () => {
+                    try {
+                        this.state.noiseConfig = JSON.parse(txt.value);
+                        this.noiseGen.replace(sel.value, editor.value);
+                        editor.classList.remove('error');
+                        status.innerText = "AST: Valid Syntax. Compiled Successfully.";
+                        status.className = "status-msg status-ok";
+                    } catch (e) {
+                        editor.classList.add('error');
+                        status.innerText = e.message;
+                        status.className = "status-msg status-err";
+                    }
+                };
+
+                sel.addEventListener('change', updateView);
+                document.getElementById('btn-apply-noise').addEventListener('click', apply);
+                updateView();
+            },
+
+            initBulletUI() {
+                const pTxt = document.getElementById('input-player-config');
+                const bTxt = document.getElementById('input-bullet-config');
+
+                const apply = () => {
+                    try {
+                        this.state.playerConfig = JSON.parse(pTxt.value);
+                        this.state.bulletConfig = JSON.parse(bTxt.value);
+                    } catch (e) { console.error(e); }
+                };
+                document.getElementById('btn-apply-bullet').addEventListener('click', apply);
+                apply();
+            },
+
+            initEnemyUI() {
+                const cTxt = document.getElementById('input-enemy-config');
+                const aiTxt = document.getElementById('input-enemy-ai');
+                const status = document.getElementById('enemy-compile-status');
+
+                const apply = () => {
+                    try {
+                        this.state.enemyConfig = JSON.parse(cTxt.value);
+                        const res = this.enemySim.setAI(aiTxt.value);
+                        if (res.success) {
+                            status.innerText = "AST: Valid Syntax. AI Updated.";
+                            status.className = "status-msg status-ok";
+                            aiTxt.classList.remove('error');
+                            this.enemySim.reset(this.state.enemyConfig);
+                        } else {
+                            throw new Error(res.error);
+                        }
+                    } catch (e) {
+                        status.innerText = e.message;
+                        status.className = "status-msg status-err";
+                        aiTxt.classList.add('error');
+                    }
+                };
+
+                document.getElementById('btn-apply-enemy').addEventListener('click', apply);
+                document.getElementById('btn-reset-enemy').addEventListener('click', () => {
+                    try {
+                        this.state.enemyConfig = JSON.parse(cTxt.value);
+                        this.enemySim.reset(this.state.enemyConfig);
+                    } catch (e) { }
+                });
+                apply();
+            },
+
+            loop(t) {
+                const time = t * 0.001;
+
+                if (this.state.activeTab === 'editor') {
+                    this.state.scrollY -= 2;
+                    this.views.terrain.drawTerrain(this.terrainSys, this.state.terrainConfig, this.state.scrollY);
+                } else if (this.state.activeTab === 'gallery') {
+                    this.views.noise.drawNoise(this.noiseGen, document.getElementById('select-algo').value, this.state.noiseConfig, time);
+                } else if (this.state.activeTab === 'bullet-sim') {
+                    this.bulletSim.update(this.state.playerConfig, this.state.bulletConfig);
+                    this.bulletSim.draw(this.state.playerConfig);
+                } else if (this.state.activeTab === 'enemy-sim') {
+                    this.enemySim.update();
+                    this.enemySim.draw();
+                }
+
+                requestAnimationFrame(t => this.loop(t));
+            }
+        };
+
+        App.init();
+    </script>
+</body>
+
+</html>
