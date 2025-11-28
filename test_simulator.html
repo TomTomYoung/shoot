@@ -280,16 +280,61 @@
     </div>
 
     <!-- LOAD UNIFIED DATA -->
-    <script src="utils.js"></script>
-    <script src="data/core.js"></script>
-    <script src="data/library/noise.js"></script>
-    <script src="data/library/terrains.js"></script>
-    <script src="data/library/enemies.js"></script>
-    <script src="data/library/bullets.js"></script>
-    <script src="data/library/bosses.js"></script>
-    <script src="data/library/scripts.js"></script>
-
     <script>
+        const DATA_SCRIPTS = [
+            'utils.js',
+            'data/core.js',
+            'data/library/noise.js',
+            'data/library/terrains.js',
+            'data/library/enemies.js',
+            'data/library/bullets.js',
+            'data/library/bosses.js',
+            'data/library/scripts.js'
+        ];
+
+        const DATA_BASE_CANDIDATES = (() => {
+            const currentDir = new URL('./', document.location.href);
+            const parentDir = new URL('../', document.location.href);
+            const repoRoot = new URL('/shoot/', document.location.origin);
+            const bases = [currentDir];
+
+            // Avoid duplicate attempts when paths collapse to the same URL
+            const maybeAdd = (url) => {
+                if (!bases.find(b => b.href === url.href)) bases.push(url);
+            };
+
+            maybeAdd(parentDir);
+            maybeAdd(repoRoot);
+            return bases;
+        })();
+
+        const loadScript = (url) => new Promise((resolve, reject) => {
+            const tag = document.createElement('script');
+            tag.src = url;
+            tag.onload = resolve;
+            tag.onerror = () => reject(new Error(`Failed to load ${url}`));
+            document.head.appendChild(tag);
+        });
+
+        async function ensureGameData() {
+            if (window.GameData) return;
+
+            for (const base of DATA_BASE_CANDIDATES) {
+                try {
+                    for (const path of DATA_SCRIPTS) {
+                        const scriptUrl = new URL(path, base);
+                        await loadScript(scriptUrl);
+                    }
+                    if (window.GameData) return;
+                } catch (err) {
+                    console.warn(err.message);
+                }
+            }
+
+            throw new Error('Game data scripts could not be loaded.');
+        }
+
+        ensureGameData().then(() => {
         /**
          * ============================================================================
          * MODULE 0: AST PARSER HELPER
@@ -860,6 +905,17 @@
         };
 
         App.init();
+        }).catch(err => {
+            console.error(err);
+            const banner = document.createElement('div');
+            banner.style.padding = '10px';
+            banner.style.background = '#300';
+            banner.style.color = '#f77';
+            banner.style.fontFamily = 'monospace';
+            banner.innerText = `Failed to load required data files. ${err.message}`;
+            document.body.innerHTML = '';
+            document.body.appendChild(banner);
+        });
     </script>
 </body>
 
