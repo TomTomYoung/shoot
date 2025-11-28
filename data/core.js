@@ -97,6 +97,5 @@ GameData.Library.Player.collision = {
         GameData.Types.LAYER_TERRAIN
     ],
     shape: 'circle',
-    size: 4,
-    behavior: { type: GameData.Behaviors.DESTROY }
+    size: 4
 };
