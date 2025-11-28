@@ -143,6 +143,30 @@
         `
     });
 
+    // Test laser with player-layer collision and pierce to validate multi-hit logic
+    GameData.registerBullet('test_piercing_laser', {
+        type: GameData.Types.P_BULLET,
+        color: '#0ff',
+        radius: 4,
+        shape: 'rect',
+        vy: -12,
+        collision: {
+            layer: GameData.Types.LAYER_P_BULLET,
+            mask: [GameData.Types.LAYER_ENEMY, GameData.Types.LAYER_BOSS, GameData.Types.LAYER_TERRAIN],
+            shape: 'rect',
+            size: [6, 24],
+            behavior: {
+                type: GameData.Behaviors.PIERCE,
+                pierce: 4,
+                onHit: { type: 'damage', value: 3 }
+            }
+        },
+        behavior: `
+            b.x += b.vx;
+            b.y += b.vy;
+        `
+    });
+
     // Plasma
     GameData.registerBullet('plasma', {
         type: GameData.Types.E_BULLET,

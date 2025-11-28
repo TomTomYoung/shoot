@@ -155,6 +155,12 @@ function startGame(packName) {
 
         spawnPlayer();
 
+        // Ensure the first wave's setup runs immediately (needed for script-only stages)
+        const firstScript = resolveScript(STAGE.waveId);
+        if (firstScript && firstScript.onStart) {
+            firstScript.onStart(GAME_CONTEXT);
+        }
+
         CURRENT_STATE = STATE.PLAY;
     }
 }
@@ -181,17 +187,7 @@ function spawnPlayer() {
 
 function updateStage() {
     STAGE.timer++;
-    let currentScript = STAGE.scripts[STAGE.waveId];
-
-    // Resolve from Library if string
-    if (typeof currentScript === 'string') {
-        currentScript = GameData.Library.Scripts[currentScript];
-        // Cache it? Or just use it. For now just use it.
-        // But we need to handle duration and update.
-        // If it's a string in the array, we can't easily replace it in place without mutating the original pack data which might be bad if we restart.
-        // Better to resolve it once when wave starts?
-        // Let's resolve it here dynamically.
-    }
+    let currentScript = resolveScript(STAGE.waveId);
 
     if (!currentScript) return; // Should not happen
 
@@ -199,8 +195,7 @@ function updateStage() {
         STAGE.waveId++;
         STAGE.timer = 0;
 
-        let nextScript = STAGE.scripts[STAGE.waveId];
-        if (typeof nextScript === 'string') nextScript = GameData.Library.Scripts[nextScript];
+        let nextScript = resolveScript(STAGE.waveId);
 
         if (nextScript && nextScript.onStart) {
             nextScript.onStart(GAME_CONTEXT);
@@ -213,6 +208,14 @@ function updateStage() {
     }
 
     SCROLL_Y += 1;
+}
+
+function resolveScript(waveId) {
+    const script = STAGE.scripts[waveId];
+    if (typeof script === 'string') {
+        return GameData.Library.Scripts[script];
+    }
+    return script;
 }
 
 function showStatus(text) {

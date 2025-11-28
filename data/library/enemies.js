@@ -282,4 +282,28 @@
             }
         }
     });
+
+    // Collision test dummy with rectangular hitbox for overlap validation
+    GameData.registerEnemy('collision_crate', {
+        hp: 12, radius: 12, color: '#5ad', score: 0,
+        shape: 'rect',
+        collision: {
+            layer: GameData.Types.LAYER_ENEMY,
+            mask: [GameData.Types.LAYER_P_BULLET, GameData.Types.LAYER_PLAYER],
+            shape: 'rect',
+            size: [28, 18],
+            behavior: { type: GameData.Behaviors.DESTROY }
+        },
+        ai: (me, ctx) => {
+            me.local.y += 0.6;
+        },
+        render: function (ctx) {
+            const size = Array.isArray(this.collision?.size) ? this.collision.size : [28, 18];
+            const [w, h] = size;
+            ctx.fillStyle = '#5ad';
+            ctx.fillRect(-w / 2, -h / 2, w, h);
+            ctx.strokeStyle = '#cfe';
+            ctx.strokeRect(-w / 2, -h / 2, w, h);
+        }
+    });
 })();
