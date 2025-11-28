@@ -1,28 +1,26 @@
-# Project Status Report
+# プロジェクト状況レポート
 
-## Current Status
-**Phase:** Collision Logic Refactoring (Mostly Complete)
+## 現在の状況
+**フェーズ:** 当たり判定ロジックのリファクタリング (ほぼ完了)
 
-The project has successfully transitioned to a data-driven collision system.
-- **Engine (`engine.js`)**: Updated to handle `collision` properties defined in JSON. Supports `circle`, `rect` shapes, and behaviors like `DESTROY` and `PIERCE`.
-- **Library (`data/library/`)**: All entity definitions (Enemies, Bullets, Bosses) have been updated with the new `collision` schema.
-- **Packs**: `scifi.js`, `fantasy.js`, and `bullet_hell.js` are correctly referencing the updated library entities.
+データ駆動型の当たり判定システムへの移行が完了しました。
+- **エンジン (`engine.js`)**: JSONで定義された `collision` プロパティを処理するように更新されました。
+    - `circle`, `rect` 形状のサポート
+    - `DESTROY` (破壊), `PIERCE` (貫通), `REFLECT` (反射), `SPLIT` (分裂), `DIRECTIONAL_SHIELD` (指向性シールド) などの振る舞いを実装済み
+    - 古いフォールバックロジックは削除され、明示的な定義が必須となりました。
+- **ライブラリ (`data/library/`)**: 全てのエンティティ定義（敵、弾、ボス）が新しい `collision` スキーマで更新されました。
+- **パック**: `scifi.js`, `fantasy.js`, `bullet_hell.js` は更新されたライブラリを正しく参照しています。
 
-## Next Steps
-1. **Verification**:
-   - We need to confirm that the new collision behaviors work as intended. specifically:
-     - **Piercing**: Verify that 'laser' type bullets actually pierce enemies.
-     - **Shapes**: Verify that rectangular hitboxes (like lasers or missiles) collide accurately compared to circles.
-   - *Action*: Create a focused test in the simulator or a specific test wave.
+## 次のステップ
+1. **検証 (Verification)**:
+   - 新しい当たり判定の振る舞いが意図通りに動作することを確認する必要があります。
+     - **貫通 (Piercing)**: レーザーなどが敵を貫通するか。
+     - **形状 (Shapes)**: 矩形の当たり判定が正しく機能するか。
+     - **新機能**: 反射 (Reflect) や分裂 (Split) の動作確認。
+   - *アクション*: シミュレーターでの集中テスト、または特定のテストウェーブの作成。
 
-2. **Cleanup**:
-   - Collision fallbacks were removed from `engine.js`; all entities now rely on explicit collision metadata.
+2. **クリーンアップ**:
+   - `engine.js` からのフォールバックロジック削除は完了しました。
 
-3. **Feature Expansion** (Optional):
-   - With the new system, we can easily add more complex behaviors like:
-     - **Reflect**: Bullets that bounce off walls.
-     - **Split**: Bullets that split on hit.
-     - **Shields**: Entities that block bullets from specific angles.
-
-## Recommendation
-Proceed with **Verification** to ensure the refactoring hasn't introduced regressions, then move to **Cleanup**.
+## 推奨事項
+リファクタリングによる退行（リグレッション）がないことを確認するため、**検証**フェーズに進むことを推奨します。
