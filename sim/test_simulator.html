@@ -253,6 +253,11 @@
             <textarea id="input-bullet-behavior" class="code-editor" spellcheck="false"
                 style="height:100px;"></textarea>
 
+            <h3>Collision (JSON)</h3>
+            <textarea id="input-bullet-collision" class="code-editor" spellcheck="false"
+                style="height:120px;"></textarea>
+            <div class="tip">Edit the <code>collision</code> block directly to try behaviors like REFLECT/SPLIT without reloading.</div>
+
             <div id="bullet-compile-status" class="status-msg status-ok">Ready.</div>
             <div id="bullet-debug" class="status-msg" style="color:#aaa;">Debug: Waiting...</div>
             <button class="primary" id="btn-apply-bullet">Apply Config</button>
@@ -1051,6 +1056,7 @@
                 noiseConfig: {},
                 playerConfig: {},
                 bulletConfig: {},
+                bulletCollision: {},
                 enemyConfig: {}
             },
 
@@ -1144,6 +1150,7 @@
                 const sel = document.getElementById('select-bullet');
                 const spawnEditor = document.getElementById('input-bullet-config');
                 const behaviorEditor = document.getElementById('input-bullet-behavior');
+                const collisionEditor = document.getElementById('input-bullet-collision');
                 const status = document.getElementById('bullet-compile-status');
                 const pTxt = document.getElementById('input-player-config');
 
@@ -1152,7 +1159,8 @@
                 const load = () => {
                     const def = GameData.Library.Bullets[sel.value];
                     if (!def) return;
-                    this.bulletSim.setBulletDefinition(def);
+                    this.state.bulletCollision = deepClone(def.collision || {});
+                    this.bulletSim.setBulletDefinition({ ...def, collision: deepClone(this.state.bulletCollision) });
 
                     spawnEditor.value = `// Spawn Script for ${sel.value}
     ctx.spawn({
@@ -1163,6 +1171,15 @@
     });`;
 
                     behaviorEditor.value = def.behavior || "b.x += b.vx;\nb.y += b.vy;";
+
+                    const hasCollision = Object.keys(this.state.bulletCollision || {}).length > 0;
+                    const defaultCollision = {
+                        shape: 'circle',
+                        size: def.radius || 4,
+                        behaviors: []
+                    };
+
+                    collisionEditor.value = JSON.stringify(hasCollision ? this.state.bulletCollision : defaultCollision, null, 4);
 
                     apply();
                 };
@@ -1194,8 +1211,22 @@
                     behaviorEditor.classList.remove('error');
 
                     try {
+                        const collisionText = collisionEditor.value.trim();
+                        this.state.bulletCollision = collisionText ? JSON.parse(collisionText) : {};
+                        collisionEditor.classList.remove('error');
+                    } catch (e) {
+                        status.className = "status-msg status-err";
+                        status.innerText = `Collision JSON Error: ${e.message}`;
+                        collisionEditor.classList.add('error');
+                        return;
+                    }
+
+                    try {
                         this.bulletSim.spawnLogic = new Function('p', 't', 'ctx', spawnEditor.value);
                         this.bulletSim.behaviorLogic = new Function('b', 't', 'ctx', behaviorEditor.value);
+                        if (this.bulletSim.activeBulletDef) {
+                            this.bulletSim.setBulletDefinition({ ...this.bulletSim.activeBulletDef, collision: deepClone(this.state.bulletCollision) });
+                        }
                         status.className = "status-msg status-ok";
                         status.innerText = "AST: Valid Syntax. Compiled Successfully.";
                     } catch (e) {
