@@ -10,7 +10,20 @@ const GameData = {
         SPAWNER: 4,
         BOSS: 5,
         ITEM: 6,
-        EFFECT: 7
+        EFFECT: 7,
+        // Collision Layers
+        LAYER_PLAYER: 'player',
+        LAYER_ENEMY: 'enemy',
+        LAYER_P_BULLET: 'p_bullet',
+        LAYER_E_BULLET: 'e_bullet',
+        LAYER_ITEM: 'item',
+        LAYER_TERRAIN: 'terrain'
+    },
+    // Collision Behavior Types
+    Behaviors: {
+        DESTROY: 'destroy',
+        PIERCE: 'pierce',
+        BOUNCE: 'bounce'
     },
     Packs: {}, // Registry for Game Packs (Genres)
     Library: { // Shared Data Library

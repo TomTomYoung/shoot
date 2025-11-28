@@ -154,6 +154,14 @@ function spawnPlayer() {
     PLAYER.radius = 4;
     PLAYER.color = '#0ff';
     PLAYER.shape = 'player';
+    // Player Collision Definition
+    PLAYER.collision = {
+        layer: GameData.Types.LAYER_PLAYER,
+        mask: [GameData.Types.LAYER_E_BULLET, GameData.Types.LAYER_ENEMY, GameData.Types.LAYER_BOSS, GameData.Types.LAYER_ITEM, GameData.Types.LAYER_TERRAIN],
+        shape: 'circle',
+        size: 4,
+        behavior: { type: GameData.Types.Behaviors.DESTROY }
+    };
     ENTITIES.push(PLAYER);
 }
 
@@ -246,6 +254,121 @@ function checkCollision(wx, wy) {
     return false;
 }
 
+// --- Generic Collision System ---
+
+function checkOverlap(a, b) {
+    // 1. Get World Positions
+    const ax = a.world.x, ay = a.world.y;
+    const bx = b.world.x, by = b.world.y;
+
+    // 2. Determine Shapes
+    const aShape = a.collision.shape;
+    const bShape = b.collision.shape;
+    const aSize = a.collision.size;
+    const bSize = b.collision.size;
+
+    // 3. Check Overlap
+    if (aShape === 'circle' && bShape === 'circle') {
+        const dx = ax - bx;
+        const dy = ay - by;
+        const r = aSize + bSize;
+        return (dx * dx + dy * dy) < (r * r);
+    }
+    else if (aShape === 'rect' && bShape === 'rect') {
+        // Size is [w, h] for rect. Center origin assumed.
+        const aw = Array.isArray(aSize) ? aSize[0] : aSize;
+        const ah = Array.isArray(aSize) ? aSize[1] : aSize;
+        const bw = Array.isArray(bSize) ? bSize[0] : bSize;
+        const bh = Array.isArray(bSize) ? bSize[1] : bSize;
+
+        return Math.abs(ax - bx) < (aw + bw) / 2 &&
+            Math.abs(ay - by) < (ah + bh) / 2;
+    }
+    else if ((aShape === 'circle' && bShape === 'rect') || (aShape === 'rect' && bShape === 'circle')) {
+        const c = aShape === 'circle' ? a : b;
+        const r = aShape === 'rect' ? a : b;
+        const cSize = c.collision.size;
+        const rSize = r.collision.size;
+        const rw = Array.isArray(rSize) ? rSize[0] : rSize;
+        const rh = Array.isArray(rSize) ? rSize[1] : rSize;
+
+        const distX = Math.abs(c.world.x - r.world.x);
+        const distY = Math.abs(c.world.y - r.world.y);
+
+        if (distX > (rw / 2 + cSize)) return false;
+        if (distY > (rh / 2 + cSize)) return false;
+
+        if (distX <= (rw / 2)) return true;
+        if (distY <= (rh / 2)) return true;
+
+        const dx = distX - rw / 2;
+        const dy = distY - rh / 2;
+        return (dx * dx + dy * dy <= (cSize * cSize));
+    }
+
+    return false;
+}
+
+function resolveCollision(a, b) {
+    // Apply effects based on 'a' hitting 'b'
+
+    const behavior = a.collision.behavior;
+    if (!behavior) return;
+
+    // 1. Self Behavior
+    if (behavior.type === GameData.Types.Behaviors.DESTROY) {
+        a.active = false;
+        spawnParticle(a.world.x, a.world.y, a.color || '#fff');
+    } else if (behavior.type === GameData.Types.Behaviors.PIERCE) {
+        if (behavior.pierce > 0) {
+            behavior.pierce--;
+        } else {
+            a.active = false;
+        }
+    }
+
+    // 2. Target Effect (onHit)
+    if (behavior.onHit) {
+        const effects = Array.isArray(behavior.onHit) ? behavior.onHit : [behavior.onHit];
+        effects.forEach(eff => {
+            if (eff.type === 'damage') {
+                if (b.hp !== undefined) {
+                    b.hp -= eff.value || 1;
+                    spawnParticle(b.world.x, b.world.y, '#fff');
+                    if (b.hp <= 0) {
+                        b.active = false;
+                        spawnExplosion(b.world.x, b.world.y);
+                        if (b.score) addScore(b.score);
+                        trySpawnItem(b.world.x, b.world.y);
+                        if (b.type === GameData.Types.BOSS) showStatus("BOSS DESTROYED");
+                    }
+                }
+            } else if (eff.type === 'status') {
+                // Implement status effects later
+            } else if (eff.type === 'modify') {
+                if (b[eff.prop] !== undefined) {
+                    b[eff.prop] *= eff.mul;
+                }
+            }
+        });
+    } else {
+        // Default damage if not specified but collision happened?
+        // For backward compatibility or simple logic:
+        if (a.type === GameData.Types.P_BULLET && (b.type === GameData.Types.ENEMY || b.type === GameData.Types.BOSS)) {
+            if (b.hp !== undefined) {
+                b.hp -= a.power || 1;
+                spawnParticle(b.world.x, b.world.y, '#fff');
+                if (b.hp <= 0) {
+                    b.active = false;
+                    spawnExplosion(b.world.x, b.world.y);
+                    if (b.score) addScore(b.score);
+                    trySpawnItem(b.world.x, b.world.y);
+                }
+            }
+        }
+    }
+}
+
 function gameLoop() {
     // Clear Screen
     CTX.fillStyle = '#000';
@@ -286,6 +409,17 @@ function updateGame() {
             b.vy = -15;
             b.color = '#fff';
             b.shape = 'rect';
+            // Player Bullet Collision
+            b.collision = {
+                layer: GameData.Types.LAYER_P_BULLET,
+                mask: [GameData.Types.LAYER_ENEMY, GameData.Types.LAYER_BOSS, GameData.Types.LAYER_TERRAIN],
+                shape: 'rect',
+                size: [4, 16],
+                behavior: {
+                    type: GameData.Types.Behaviors.DESTROY,
+                    onHit: { type: 'damage', value: 1 }
+                }
+            };
             ENTITIES.push(b);
         }
 
@@ -324,68 +458,64 @@ function updateGame() {
     };
     ENTITIES.filter(e => !e.parent).forEach(e => updateMatrix(e, Mat3.identity()));
 
-    // D. Collision
-    const bullets = ENTITIES.filter(e => e.type === GameData.Types.P_BULLET && e.active);
-    const targets = ENTITIES.filter(e => (e.type === GameData.Types.ENEMY || e.type === GameData.Types.SPAWNER || e.type === GameData.Types.BOSS) && e.active);
-    const items = ENTITIES.filter(e => e.type === GameData.Types.ITEM && e.active);
+    // D. Collision (Generic)
+    // Filter entities with collision props
+    const colliders = ENTITIES.filter(e => e.active && e.collision);
 
-    // Player vs Items
-    if (PLAYER && PLAYER.active) {
-        items.forEach(i => {
-            const dx = PLAYER.world.x - i.world.x;
-            const dy = PLAYER.world.y - i.world.y;
-            if (dx * dx + dy * dy < (PLAYER.radius + i.radius + 10) ** 2) {
-                i.active = false;
-                collectItem(i);
+    colliders.forEach(a => {
+        if (!a.active) return;
+
+        // 1. Terrain Check
+        if (a.collision.mask.includes(GameData.Types.LAYER_TERRAIN)) {
+            if (checkCollision(a.world.x, a.world.y)) {
+                // Hit Terrain
+                if (a.collision.behavior.type === GameData.Types.Behaviors.DESTROY) {
+                    a.active = false;
+                    spawnParticle(a.world.x, a.world.y, '#888', 2);
+                }
+                if (a.type === GameData.Types.PLAYER) playerHit();
             }
-        });
-    }
-
-    bullets.forEach(b => {
-        if (checkCollision(b.world.x, b.world.y)) {
-            b.active = false;
-            // Noise.set(b.world.x, b.world.y - SCROLL_Y, 0); // Disable terrain destruction for now
-            spawnParticle(b.world.x, b.world.y, '#888', 2);
         }
 
-        targets.forEach(t => {
-            const dx = b.world.x - t.world.x;
-            const dy = b.world.y - t.world.y;
-            if (dx * dx + dy * dy < (t.radius + 5) ** 2) {
-                if (t.type === GameData.Types.BOSS) {
-                    if (resolveBossHit(t, b)) b.active = false;
-                } else {
-                    t.hp--;
-                    b.active = false;
-                    spawnParticle(t.world.x, t.world.y, '#fff');
-                    if (t.hp <= 0) {
-                        t.active = false;
-                        spawnExplosion(t.world.x, t.world.y);
-                        addScore(t.score || 100);
-                        trySpawnItem(t.world.x, t.world.y);
+        // 2. Entity vs Entity
+        colliders.forEach(b => {
+            if (a === b || !b.active) return;
+
+            // Check if 'a' targets 'b'
+            if (a.collision.mask.includes(b.collision.layer)) {
+
+                // Special Case: Boss Grid
+                if (b.type === GameData.Types.BOSS && b.grid) {
+                    if (resolveBossHit(b, a)) { // Note: resolveBossHit handles logic internally for now
+                        // If hit, apply 'a' behavior
+                        if (a.collision.behavior.type === GameData.Types.Behaviors.DESTROY) {
+                            a.active = false;
+                            spawnParticle(a.world.x, a.world.y, '#ff0');
+                        }
+                    }
+                    return;
+                }
+
+                if (checkOverlap(a, b)) {
+                    resolveCollision(a, b);
+
+                    // Special Case: Player Hit
+                    if (b.type === GameData.Types.PLAYER) {
+                        playerHit();
+                    }
+                    // Special Case: Item Collection
+                    if (b.type === GameData.Types.ITEM && a.type === GameData.Types.PLAYER) {
+                        collectItem(b);
                     }
                 }
             }
         });
 
-        if (b.world.y < 0) b.active = false;
-    });
-
-    if (PLAYER && PLAYER.active) {
-        // Player vs Terrain
-        if (checkCollision(PLAYER.world.x, PLAYER.world.y)) {
-            playerHit();
+        // Out of bounds check for bullets
+        if ((a.type === GameData.Types.P_BULLET || a.type === GameData.Types.E_BULLET) && (a.world.y < -50 || a.world.y > 850 || a.world.x < -50 || a.world.x > 650)) {
+            a.active = false;
         }
-        // Player vs Enemy/Bullet
-        const hazards = ENTITIES.filter(e => (e.type === GameData.Types.E_BULLET || e.type === GameData.Types.ENEMY || e.type === GameData.Types.BOSS) && e.active);
-        hazards.forEach(h => {
-            const dx = PLAYER.world.x - h.world.x;
-            const dy = PLAYER.world.y - h.world.y;
-            if (dx * dx + dy * dy < (PLAYER.radius + (h.radius || 2)) ** 2) {
-                playerHit();
-            }
-        });
-    }
+    });
 
     ENTITIES = ENTITIES.filter(e => e.active);
     updateParticles();

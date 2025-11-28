@@ -9,6 +9,13 @@
         color: '#f00',
         radius: 5,
         shape: 'circle',
+        collision: {
+            layer: GameData.Types.LAYER_E_BULLET,
+            mask: [GameData.Types.LAYER_PLAYER, GameData.Types.LAYER_TERRAIN],
+            shape: 'circle',
+            size: 5,
+            behavior: { type: GameData.Types.Behaviors.DESTROY }
+        },
         behavior: `
             b.x += b.vx;
             b.y += b.vy;
@@ -21,6 +28,13 @@
         color: '#00f',
         radius: 5,
         shape: 'circle',
+        collision: {
+            layer: GameData.Types.LAYER_E_BULLET,
+            mask: [GameData.Types.LAYER_PLAYER, GameData.Types.LAYER_TERRAIN],
+            shape: 'circle',
+            size: 5,
+            behavior: { type: GameData.Types.Behaviors.DESTROY }
+        },
         behavior: `
             b.x += b.vx;
             b.y += b.vy;
@@ -34,6 +48,13 @@
         radius: 3,
         shape: 'rect',
         speed: 3,
+        collision: {
+            layer: GameData.Types.LAYER_E_BULLET,
+            mask: [GameData.Types.LAYER_PLAYER, GameData.Types.LAYER_TERRAIN],
+            shape: 'rect',
+            size: [6, 6],
+            behavior: { type: GameData.Types.Behaviors.DESTROY }
+        },
         behavior: `
             // Simple Homing Logic
             const target = ctx.getPlayerPosition();
@@ -53,7 +74,7 @@
                 b.vx = (b.vx / currentSpeed) * speed;
                 b.vy = (b.vy / currentSpeed) * speed;
             }
-
+ 
             b.x += b.vx;
             b.y += b.vy;
         `
@@ -67,6 +88,13 @@
         length: 10,
         shape: 'line',
         speed: 6,
+        collision: {
+            layer: GameData.Types.LAYER_E_BULLET,
+            mask: [GameData.Types.LAYER_PLAYER, GameData.Types.LAYER_TERRAIN],
+            shape: 'rect', // Line approximated as rect for now
+            size: [2, 10],
+            behavior: { type: GameData.Types.Behaviors.DESTROY }
+        },
         behavior: `
             b.x += b.vx;
             b.y += b.vy;
@@ -80,6 +108,13 @@
         radius: 6,
         shape: 'star',
         speed: 3,
+        collision: {
+            layer: GameData.Types.LAYER_E_BULLET,
+            mask: [GameData.Types.LAYER_PLAYER, GameData.Types.LAYER_TERRAIN],
+            shape: 'circle',
+            size: 6,
+            behavior: { type: GameData.Types.Behaviors.DESTROY }
+        },
         behavior: `
             b.x += b.vx;
             b.y += b.vy;
@@ -95,6 +130,13 @@
         length: 20,
         shape: 'rect',
         speed: 10,
+        collision: {
+            layer: GameData.Types.LAYER_E_BULLET,
+            mask: [GameData.Types.LAYER_PLAYER, GameData.Types.LAYER_TERRAIN],
+            shape: 'rect',
+            size: [6, 20],
+            behavior: { type: GameData.Types.Behaviors.PIERCE, pierce: 999 }
+        },
         behavior: `
             b.x += b.vx;
             b.y += b.vy;
@@ -107,6 +149,13 @@
         color: '#a0f',
         radius: 8,
         shape: 'circle',
+        collision: {
+            layer: GameData.Types.LAYER_E_BULLET,
+            mask: [GameData.Types.LAYER_PLAYER, GameData.Types.LAYER_TERRAIN],
+            shape: 'circle',
+            size: 8,
+            behavior: { type: GameData.Types.Behaviors.DESTROY }
+        },
         behavior: `
             b.x += b.vx;
             b.y += b.vy;

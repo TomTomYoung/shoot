@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Collision Test</title>
+</head>
+
+<body>
+    <canvas id="gameCanvas" width="600" height="800"></canvas>
+    <div id="result">Running...</div>
+
+    <!-- Core & Utils -->
+    <script src="../utils.js"></script>
+    <script src="../data/core.js"></script>
+
+    <!-- Library -->
+    <script src="../data/library/enemies.js"></script>
+    <script src="../data/library/bosses.js"></script>
+    <script src="../data/library/bullets.js"></script>
+    <script src="../data/library/terrains.js"></script>
+    <script src="../data/library/scripts.js"></script>
+
+    <!-- Engine -->
+    <script src="../engine.js"></script>
+
+    <script>
+        function runTest() {
+            // 1. Initialize
+            initGame('gameCanvas');
+
+            // Stop the automatic loop to control it manually
+            // We can't easily stop the loop started by initGame without modifying engine.js
+            // But we can just let it run and check state after a delay.
+            // Or better, we can overwrite requestAnimationFrame to stop it?
+            // Let's just use the global variables.
+
+            // 2. Setup Scenario
+            // Clear existing entities
+            ENTITIES = [];
+
+            // Spawn Player
+            spawnPlayer();
+            const player = PLAYER;
+            player.world.x = 300;
+            player.world.y = 700;
+
+            // Spawn Enemy (Zako) directly above player
+            GAME_CONTEXT.spawnEnemy('zako', 300, 100);
+            const enemy = ENTITIES.find(e => e.type === GameData.Types.ENEMY);
+            enemy.hp = 1; // Weak enemy
+            enemy.world.x = 300;
+            enemy.world.y = 600; // Close to player
+
+            // Spawn Player Bullet hitting the enemy
+            // Bullet moves up (-y). Enemy is at 600. Bullet at 610.
+            const bullet = new Entity(GameData.Types.P_BULLET, 300, 610);
+            bullet.vy = -5;
+            bullet.collision = {
+                layer: GameData.Types.LAYER_P_BULLET,
+                mask: [GameData.Types.LAYER_ENEMY],
+                shape: 'rect',
+                size: [4, 16],
+                behavior: {
+                    type: GameData.Types.Behaviors.DESTROY,
+                    onHit: { type: 'damage', value: 1 }
+                }
+            };
+            ENTITIES.push(bullet);
+
+            console.log("Test Started");
+            console.log("Enemy HP:", enemy.hp);
+            console.log("Bullet Active:", bullet.active);
+
+            // 3. Run a few frames
+            setTimeout(() => {
+                // Check results
+                const enemyExists = ENTITIES.includes(enemy);
+                const bulletExists = ENTITIES.includes(bullet);
+
+                console.log("Enemy Exists:", enemyExists);
+                console.log("Bullet Exists:", bulletExists);
+
+                const resultDiv = document.getElementById('result');
+                if (!enemyExists && !bulletExists) {
+                    resultDiv.innerText = "PASS: Enemy destroyed and bullet destroyed.";
+                    resultDiv.style.color = "green";
+                } else {
+                    resultDiv.innerText = `FAIL: Enemy:${enemyExists}, Bullet:${bulletExists}`;
+                    resultDiv.style.color = "red";
+                }
+            }, 500);
+        }
+
+        window.onload = runTest;
+    </script>
+</body>
+
+</html>
