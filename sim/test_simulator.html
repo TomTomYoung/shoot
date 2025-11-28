@@ -469,9 +469,29 @@
          */
         const deepClone = (obj) => obj ? JSON.parse(JSON.stringify(obj)) : obj;
 
+        const hasCollisionData = (collision) => collision && Object.keys(collision).length > 0;
+
+        const buildBulletCollisionTemplate = (size = 4) => ({
+            mask: [GameData.Types.LAYER_PLAYER, GameData.Types.LAYER_TERRAIN],
+            shape: 'circle',
+            size: size,
+            behavior: { type: GameData.Behaviors.DESTROY }
+        });
+
+        const buildPlayerCollisionTemplate = (size = 8) => ({ shape: 'circle', size });
+
+        const resolveCollisionValue = (collision, size, templateBuilder) => {
+            if (collision === undefined || collision === null) {
+                return templateBuilder(size);
+            }
+            return deepClone(collision);
+        };
+
         const buildBulletInstance = (opts, def) => {
             const base = deepClone(def || {});
-            const collision = (opts && opts.collision) ? deepClone(opts.collision) : deepClone(def && def.collision);
+            const collisionSource = (opts && 'collision' in opts) ? opts.collision : def && def.collision;
+            const sizeHint = opts?.size || opts?.radius || def?.radius || 4;
+            const collision = resolveCollisionValue(collisionSource, sizeHint, buildBulletCollisionTemplate);
             return Object.assign(base, opts || {}, { collision });
         };
 
@@ -494,7 +514,15 @@
             }
 
             setBulletDefinition(def) {
-                this.activeBulletDef = def ? JSON.parse(JSON.stringify(def)) : null;
+                if (!def) {
+                    this.activeBulletDef = null;
+                    return;
+                }
+                const sizeHint = def.radius || def.size || 4;
+                this.activeBulletDef = {
+                    ...deepClone(def),
+                    collision: resolveCollisionValue(def.collision, sizeHint, buildBulletCollisionTemplate)
+                };
             }
 
             update(playerConfig) {
@@ -626,8 +654,8 @@
                     type: 'player',
                     x: this.player.x,
                     y: this.player.y,
-                    collision: playerCollision ? JSON.parse(JSON.stringify(playerCollision)) : null,
-                    radius: playerCollision && playerCollision.size ? playerCollision.size : 6
+                    collision: resolveCollisionValue(playerCollision, this.player.radius, buildPlayerCollisionTemplate),
+                    radius: (playerCollision && playerCollision.size) || this.player.radius || 6
                 };
             }
 
@@ -863,7 +891,8 @@
                 this.player.color = cfg.color || basePlayer.color || '#0ff';
                 this.player.hp = cfg.hp || 3;
                 this.player.radius = cfg.radius || basePlayer.radius || 10;
-                this.player.collision = deepClone((basePlayer && basePlayer.collision) || {});
+                const playerCollision = (basePlayer && basePlayer.collision);
+                this.player.collision = resolveCollisionValue(playerCollision, this.player.radius, buildPlayerCollisionTemplate);
                 this.player.active = true;
             }
 
@@ -872,8 +901,8 @@
                     type: 'player',
                     x: this.player.x,
                     y: this.player.y,
-                    collision: deepClone(GameData.Library.Player && GameData.Library.Player.collision),
-                    radius: (GameData.Library.Player && GameData.Library.Player.collision && GameData.Library.Player.collision.size) || 6
+                    collision: resolveCollisionValue(GameData.Library.Player && GameData.Library.Player.collision, this.player.radius, buildPlayerCollisionTemplate),
+                    radius: (GameData.Library.Player && GameData.Library.Player.collision && GameData.Library.Player.collision.size) || this.player.radius || 6
                 };
             }
 
@@ -1159,8 +1188,14 @@
                 const load = () => {
                     const def = GameData.Library.Bullets[sel.value];
                     if (!def) return;
-                    this.state.bulletCollision = deepClone(def.collision || {});
-                    this.bulletSim.setBulletDefinition({ ...def, collision: deepClone(this.state.bulletCollision) });
+                    const defCollision = deepClone(def.collision);
+                    const sizeHint = def.radius || 4;
+                    const resolvedCollision = hasCollisionData(defCollision)
+                        ? defCollision
+                        : buildBulletCollisionTemplate(sizeHint);
+
+                    this.state.bulletCollision = deepClone(resolvedCollision);
+                    this.bulletSim.setBulletDefinition({ ...def, collision: deepClone(resolvedCollision) });
 
                     spawnEditor.value = `// Spawn Script for ${sel.value}
     ctx.spawn({
@@ -1172,14 +1207,7 @@
 
                     behaviorEditor.value = def.behavior || "b.x += b.vx;\nb.y += b.vy;";
 
-                    const hasCollision = Object.keys(this.state.bulletCollision || {}).length > 0;
-                    const defaultCollision = {
-                        shape: 'circle',
-                        size: def.radius || 4,
-                        behaviors: []
-                    };
-
-                    collisionEditor.value = JSON.stringify(hasCollision ? this.state.bulletCollision : defaultCollision, null, 4);
+                    collisionEditor.value = JSON.stringify(this.state.bulletCollision, null, 4);
 
                     apply();
                 };
