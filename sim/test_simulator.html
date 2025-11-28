@@ -473,10 +473,15 @@
                 this.keys = {};
                 this.spawnLogic = null;
                 this.behaviorLogic = null;
+                this.activeBulletDef = null;
                 this.time = 0;
 
                 window.addEventListener('keydown', e => this.keys[e.key.toLowerCase()] = true);
                 window.addEventListener('keyup', e => this.keys[e.key.toLowerCase()] = false);
+            }
+
+            setBulletDefinition(def) {
+                this.activeBulletDef = def ? JSON.parse(JSON.stringify(def)) : null;
             }
 
             update(playerConfig) {
@@ -516,25 +521,43 @@
                         b.y += b.vy;
                     }
                 });
-                this.bullets = this.bullets.filter(b => b.x > 0 && b.x < this.width && b.y > 0 && b.y < this.height);
+
+                const playerCollider = this.getPlayerCollider();
+
+                // Apply collision against player
+                this.bullets.forEach(b => {
+                    if (!b.collision || !b.collision.mask || !b.collision.mask.includes(GameData.Types.LAYER_PLAYER)) return;
+                    if (this.checkOverlap(b, playerCollider)) {
+                        this.resolveCollision(b, playerCollider);
+                    }
+                });
+
+                // Terrain check (canvas bounds act as terrain for sim)
+                this.bullets.forEach(b => {
+                    if (!b.collision || !b.collision.mask || !b.collision.mask.includes(GameData.Types.LAYER_TERRAIN)) return;
+                    if (this.checkOutOfBounds(b)) {
+                        this.resolveTerrainCollision(b);
+                    }
+                });
+
+                this.bullets = this.bullets.filter(b => b.active !== false && b.x > -40 && b.x < this.width + 40 && b.y > -40 && b.y < this.height + 40);
             }
 
             executeSpawn() {
                 if (!this.spawnLogic) return;
                 const ctx = {
                     spawn: (opts) => {
+                        const base = this.createBulletFromDef(opts);
                         const angleRad = (opts.angle || -90) * Math.PI / 180;
-                        const speed = opts.speed || 4;
-                        this.bullets.push({
+                        const speed = opts.speed || base.speed || 4;
+                        this.bullets.push(Object.assign(base, {
                             x: this.player.x,
                             y: this.player.y,
                             vx: Math.cos(angleRad) * speed,
                             vy: Math.sin(angleRad) * speed,
-                            color: opts.color || '#ff0',
-                            size: opts.size || 4,
                             age: 0,
                             angle: 0 // For rotation
-                        });
+                        }));
                     }
                 };
                 try {
@@ -575,6 +598,176 @@
                         this.ctx.fill();
                     }
                 });
+            }
+
+            // --- Collision Helpers (aligns with engine behaviors) ---
+            getPlayerCollider() {
+                const playerCollision = GameData.Library.Player && GameData.Library.Player.collision;
+                return {
+                    type: 'player',
+                    x: this.player.x,
+                    y: this.player.y,
+                    collision: playerCollision ? JSON.parse(JSON.stringify(playerCollision)) : null,
+                    radius: playerCollision && playerCollision.size ? playerCollision.size : 6
+                };
+            }
+
+            createBulletFromDef(opts = {}, defOverride = null) {
+                const def = defOverride || this.activeBulletDef || {};
+                const collision = (opts.collision || def.collision) ? JSON.parse(JSON.stringify(opts.collision || def.collision)) : null;
+                return {
+                    type: def.type || GameData.Types.E_BULLET,
+                    color: opts.color || def.color || '#ff0',
+                    size: opts.size || def.radius || 4,
+                    shape: opts.shape || def.shape || 'circle',
+                    speed: opts.speed || def.speed,
+                    collision
+                };
+            }
+
+            checkOutOfBounds(b) {
+                return b.x < 0 || b.x > this.width || b.y < 0 || b.y > this.height;
+            }
+
+            checkOverlap(a, b) {
+                if (!a.collision || !b.collision) return false;
+                const shapeA = a.collision.shape || 'circle';
+                const shapeB = b.collision.shape || 'circle';
+
+                const radiusA = Array.isArray(a.collision.size) ? Math.max(...a.collision.size) / 2 : (a.collision.size || a.size || 4);
+                const radiusB = Array.isArray(b.collision.size) ? Math.max(...b.collision.size) / 2 : (b.collision.size || b.radius || 4);
+
+                if (shapeA === 'circle' && shapeB === 'circle') {
+                    const dx = a.x - b.x;
+                    const dy = a.y - b.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    return dist < (radiusA + radiusB);
+                }
+
+                // Simple AABB fallback
+                const aBox = {
+                    left: a.x - radiusA,
+                    right: a.x + radiusA,
+                    top: a.y - radiusA,
+                    bottom: a.y + radiusA
+                };
+                const bBox = {
+                    left: b.x - radiusB,
+                    right: b.x + radiusB,
+                    top: b.y - radiusB,
+                    bottom: b.y + radiusB
+                };
+                return !(aBox.right < bBox.left || aBox.left > bBox.right || aBox.bottom < bBox.top || aBox.top > bBox.bottom);
+            }
+
+            reflectEntity(entity, target, behavior) {
+                if (!entity) return;
+                const axis = behavior.axis || 'auto';
+                let vx = entity.vx || 0;
+                let vy = entity.vy || 0;
+                const dampen = behavior.dampen !== undefined ? behavior.dampen : 1;
+
+                const flipVelocity = (flipX, flipY) => {
+                    if (flipX) vx = -vx;
+                    if (flipY) vy = -vy;
+                };
+
+                if (axis === 'horizontal') {
+                    flipVelocity(false, true);
+                } else if (axis === 'vertical') {
+                    flipVelocity(true, false);
+                } else if (axis === 'both') {
+                    flipVelocity(true, true);
+                } else if (axis === 'auto' && target) {
+                    const dx = entity.x - target.x;
+                    const dy = entity.y - target.y;
+                    flipVelocity(Math.abs(dx) > Math.abs(dy), Math.abs(dy) >= Math.abs(dx));
+                } else {
+                    flipVelocity(true, true);
+                }
+
+                entity.vx = vx * dampen;
+                entity.vy = vy * dampen;
+                if (behavior.maxBounces !== undefined) {
+                    entity._bounces = (entity._bounces || 0) + 1;
+                    if (entity._bounces > behavior.maxBounces) entity.active = false;
+                }
+            }
+
+            splitEntity(entity, behavior) {
+                const count = behavior.count || 3;
+                if (!behavior.bullet) return;
+
+                const spread = behavior.spread || Math.PI / 2;
+                const speed = behavior.speed || Math.hypot(entity.vx || 0, entity.vy || 0) || 4;
+                const baseAngle = behavior.baseAngle !== undefined ? behavior.baseAngle : Math.atan2(entity.vy || 0, entity.vx || 0);
+
+                for (let i = 0; i < count; i++) {
+                    const t = count === 1 ? 0 : (i / (count - 1) - 0.5);
+                    const angle = baseAngle + t * spread;
+                    const def = GameData.Library.Bullets[behavior.bullet] || {};
+                    const bullet = this.createBulletFromDef({ ...def, speed }, def);
+                    bullet.x = entity.x;
+                    bullet.y = entity.y;
+                    bullet.vx = Math.cos(angle) * speed;
+                    bullet.vy = Math.sin(angle) * speed;
+                    bullet.age = 0;
+                    this.bullets.push(bullet);
+                }
+
+                entity.active = false;
+            }
+
+            resolveCollision(a, b) {
+                const behavior = a.collision && a.collision.behavior;
+                if (!behavior) return;
+
+                let applyOnHit = true;
+
+                if (behavior.type === GameData.Behaviors.DESTROY) {
+                    a.active = false;
+                } else if (behavior.type === GameData.Behaviors.PIERCE) {
+                    if (behavior.pierce > 0) {
+                        behavior.pierce--;
+                    } else {
+                        a.active = false;
+                    }
+                } else if (behavior.type === GameData.Behaviors.REFLECT) {
+                    this.reflectEntity(a, b, behavior);
+                } else if (behavior.type === GameData.Behaviors.SPLIT) {
+                    this.splitEntity(a, behavior);
+                }
+
+                if (applyOnHit && behavior.onHit) {
+                    // Minimal feedback for simulator
+                    document.getElementById('bullet-debug').innerText = `Hit detected at ${this.time}`;
+                }
+            }
+
+            resolveTerrainCollision(entity) {
+                if (!entity.collision || !entity.collision.behavior) return;
+                const behavior = entity.collision.behavior;
+                if (behavior.type === GameData.Behaviors.DESTROY) {
+                    entity.active = false;
+                } else if (behavior.type === GameData.Behaviors.PIERCE) {
+                    if (behavior.pierce > 0) {
+                        behavior.pierce--;
+                    } else {
+                        entity.active = false;
+                    }
+                } else if (behavior.type === GameData.Behaviors.REFLECT) {
+                    const inferred = { ...behavior };
+                    if (!behavior.axis) {
+                        const hitSideX = entity.x < 0 || entity.x > this.width;
+                        const hitSideY = entity.y < 0 || entity.y > this.height;
+                        inferred.axis = hitSideX && hitSideY ? 'both' : (hitSideX ? 'vertical' : 'horizontal');
+                    }
+                    this.reflectEntity(entity, null, inferred);
+                    entity.x = Math.max(0, Math.min(this.width, entity.x));
+                    entity.y = Math.max(0, Math.min(this.height, entity.y));
+                } else if (behavior.type === GameData.Behaviors.SPLIT) {
+                    this.splitEntity(entity, behavior);
+                }
             }
         }
 
@@ -812,6 +1005,7 @@
                 const load = () => {
                     const def = GameData.Library.Bullets[sel.value];
                     if (!def) return;
+                    this.bulletSim.setBulletDefinition(def);
 
                     spawnEditor.value = `// Spawn Script for ${sel.value}
     ctx.spawn({
