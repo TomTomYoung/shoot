@@ -10,7 +10,7 @@
             mask: [GameData.Types.LAYER_P_BULLET, GameData.Types.LAYER_PLAYER],
             shape: 'circle',
             size: 12,
-            behavior: { type: GameData.Types.Behaviors.DESTROY }
+            behavior: { type: GameData.Behaviors.DESTROY }
         },
         ai: (me, ctx) => {
             me.local.y += 2;
@@ -34,7 +34,7 @@
             mask: [GameData.Types.LAYER_P_BULLET, GameData.Types.LAYER_PLAYER],
             shape: 'circle',
             size: 15,
-            behavior: { type: GameData.Types.Behaviors.DESTROY }
+            behavior: { type: GameData.Behaviors.DESTROY }
         },
         ai: (me, ctx) => {
             me.local.y += 1;
@@ -59,7 +59,7 @@
             mask: [GameData.Types.LAYER_P_BULLET, GameData.Types.LAYER_PLAYER],
             shape: 'circle',
             size: 10,
-            behavior: { type: GameData.Types.Behaviors.DESTROY }
+            behavior: { type: GameData.Behaviors.DESTROY }
         },
         ai: (me, ctx) => {
             me.local.y += 1.5;
@@ -83,7 +83,7 @@
             mask: [GameData.Types.LAYER_P_BULLET, GameData.Types.LAYER_PLAYER],
             shape: 'circle',
             size: 20,
-            behavior: { type: GameData.Types.Behaviors.DESTROY }
+            behavior: { type: GameData.Behaviors.DESTROY }
         },
         ai: (me, ctx) => {
             me.local.y += 2;
@@ -104,7 +104,7 @@
             mask: [GameData.Types.LAYER_P_BULLET, GameData.Types.LAYER_PLAYER],
             shape: 'circle',
             size: 8,
-            behavior: { type: GameData.Types.Behaviors.DESTROY }
+            behavior: { type: GameData.Behaviors.DESTROY }
         },
         ai: (me, ctx) => {
             me.local.y += 5;
@@ -124,7 +124,7 @@
             mask: [GameData.Types.LAYER_P_BULLET, GameData.Types.LAYER_PLAYER],
             shape: 'circle',
             size: 15,
-            behavior: { type: GameData.Types.Behaviors.DESTROY }
+            behavior: { type: GameData.Behaviors.DESTROY }
         },
         ai: (me, ctx) => {
             me.local.y += 0.5;
@@ -151,7 +151,7 @@
             mask: [GameData.Types.LAYER_P_BULLET, GameData.Types.LAYER_PLAYER],
             shape: 'circle',
             size: 10,
-            behavior: { type: GameData.Types.Behaviors.DESTROY }
+            behavior: { type: GameData.Behaviors.DESTROY }
         },
         ai: (me, ctx) => {
             me.local.y += 3;
@@ -174,7 +174,7 @@
             mask: [GameData.Types.LAYER_P_BULLET, GameData.Types.LAYER_PLAYER],
             shape: 'circle',
             size: 20,
-            behavior: { type: GameData.Types.Behaviors.DESTROY }
+            behavior: { type: GameData.Behaviors.DESTROY }
         },
         ai: (me, ctx) => {
             me.local.angle += 0.05;
@@ -194,7 +194,7 @@
             mask: [GameData.Types.LAYER_P_BULLET, GameData.Types.LAYER_PLAYER],
             shape: 'circle',
             size: 12,
-            behavior: { type: GameData.Types.Behaviors.DESTROY }
+            behavior: { type: GameData.Behaviors.DESTROY }
         },
         ai: (me, ctx) => {
             me.local.y += 1;
@@ -221,7 +221,7 @@
             mask: [GameData.Types.LAYER_P_BULLET, GameData.Types.LAYER_PLAYER],
             shape: 'circle',
             size: 18,
-            behavior: { type: GameData.Types.Behaviors.DESTROY }
+            behavior: { type: GameData.Behaviors.DESTROY }
         },
         ai: (me, ctx) => {
             me.local.y += 0.5;
@@ -242,7 +242,7 @@
             mask: [GameData.Types.LAYER_P_BULLET, GameData.Types.LAYER_PLAYER],
             shape: 'circle',
             size: 15,
-            behavior: { type: GameData.Types.Behaviors.DESTROY }
+            behavior: { type: GameData.Behaviors.DESTROY }
         },
         ai: (me, ctx) => {
             me.local.y += 1;
@@ -268,7 +268,7 @@
             mask: [GameData.Types.LAYER_P_BULLET, GameData.Types.LAYER_PLAYER],
             shape: 'circle',
             size: 25,
-            behavior: { type: GameData.Types.Behaviors.DESTROY }
+            behavior: { type: GameData.Behaviors.DESTROY }
         },
         ai: (me, ctx) => {
             me.local.y += 0.2;

@@ -14,6 +14,7 @@ const GameData = {
         // Collision Layers
         LAYER_PLAYER: 'player',
         LAYER_ENEMY: 'enemy',
+        LAYER_BOSS: 'boss',
         LAYER_P_BULLET: 'p_bullet',
         LAYER_E_BULLET: 'e_bullet',
         LAYER_ITEM: 'item',
@@ -32,7 +33,15 @@ const GameData = {
         Bullets: {},
         Terrains: {},
         Scripts: {},
-        Noise: {}
+        Noise: {},
+        Player: {
+            // Default player collision profile
+            collision: {},
+            color: '#0ff',
+            radius: 4,
+            shape: 'player',
+            shot: 'player_normal'
+        }
     },
     CurrentPack: null,
 
@@ -76,3 +85,18 @@ const GameData = {
 if (typeof window !== 'undefined') {
     window.GameData = GameData;
 }
+
+// Initialize player collision profile with shared constants
+GameData.Library.Player.collision = {
+    layer: GameData.Types.LAYER_PLAYER,
+    mask: [
+        GameData.Types.LAYER_E_BULLET,
+        GameData.Types.LAYER_ENEMY,
+        GameData.Types.LAYER_BOSS,
+        GameData.Types.LAYER_ITEM,
+        GameData.Types.LAYER_TERRAIN
+    ],
+    shape: 'circle',
+    size: 4,
+    behavior: { type: GameData.Behaviors.DESTROY }
+};
