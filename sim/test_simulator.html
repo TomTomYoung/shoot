@@ -462,6 +462,14 @@
          * MODULE 3: BULLET SIMULATOR
          * ============================================================================
          */
+        const deepClone = (obj) => obj ? JSON.parse(JSON.stringify(obj)) : obj;
+
+        const buildBulletInstance = (opts, def) => {
+            const base = deepClone(def || {});
+            const collision = (opts && opts.collision) ? deepClone(opts.collision) : deepClone(def && def.collision);
+            return Object.assign(base, opts || {}, { collision });
+        };
+
         class BulletSim {
             constructor(canvasId) {
                 this.canvas = document.getElementById(canvasId);
@@ -506,6 +514,7 @@
                 };
 
                 this.bullets.forEach(b => {
+                    b._blockedByShield = false;
                     b.age++;
                     if (this.behaviorLogic) {
                         try {
@@ -528,7 +537,12 @@
                 this.bullets.forEach(b => {
                     if (!b.collision || !b.collision.mask || !b.collision.mask.includes(GameData.Types.LAYER_PLAYER)) return;
                     if (this.checkOverlap(b, playerCollider)) {
-                        this.resolveCollision(b, playerCollider);
+                        const playerBehavior = playerCollider.collision && playerCollider.collision.behavior;
+                        const shielded = playerBehavior && playerBehavior.type === GameData.Behaviors.DIRECTIONAL_SHIELD;
+                        const allowImpact = !shielded || this.handleDirectionalShield(playerCollider, b, playerBehavior);
+                        if (allowImpact && b.active !== false && !b._blockedByShield) {
+                            this.resolveCollision(b, playerCollider);
+                        }
                     }
                 });
 
@@ -614,15 +628,14 @@
 
             createBulletFromDef(opts = {}, defOverride = null) {
                 const def = defOverride || this.activeBulletDef || {};
-                const collision = (opts.collision || def.collision) ? JSON.parse(JSON.stringify(opts.collision || def.collision)) : null;
-                return {
+                return buildBulletInstance({
                     type: def.type || GameData.Types.E_BULLET,
                     color: opts.color || def.color || '#ff0',
                     size: opts.size || def.radius || 4,
                     shape: opts.shape || def.shape || 'circle',
                     speed: opts.speed || def.speed,
-                    collision
-                };
+                    collision: opts.collision || def.collision
+                }, def);
             }
 
             checkOutOfBounds(b) {
@@ -658,6 +671,31 @@
                     bottom: b.y + radiusB
                 };
                 return !(aBox.right < bBox.left || aBox.left > bBox.right || aBox.bottom < bBox.top || aBox.top > bBox.bottom);
+            }
+
+            handleDirectionalShield(shield, other, behavior) {
+                if (!other || !other.collision) return true;
+                const direction = behavior.direction !== undefined ? behavior.direction : -Math.PI / 2;
+                const arc = behavior.arc !== undefined ? behavior.arc : Math.PI / 2;
+
+                const dx = (other.x || 0) - (shield.x || 0);
+                const dy = (other.y || 0) - (shield.y || 0);
+                const incoming = Math.atan2(dy, dx);
+                const delta = Math.atan2(Math.sin(incoming - direction), Math.cos(incoming - direction));
+                const withinShield = Math.abs(delta) <= arc / 2;
+
+                if (!withinShield) return true;
+
+                const response = behavior.response || 'reflect';
+                if (response === 'reflect') {
+                    this.reflectEntity(other, shield, behavior.reflect || behavior);
+                    other._blockedByShield = true;
+                } else if (response === 'absorb') {
+                    other.active = false;
+                    other._blockedByShield = true;
+                }
+
+                return false;
             }
 
             reflectEntity(entity, target, behavior) {
@@ -736,6 +774,8 @@
                     this.reflectEntity(a, b, behavior);
                 } else if (behavior.type === GameData.Behaviors.SPLIT) {
                     this.splitEntity(a, behavior);
+                } else if (behavior.type === GameData.Behaviors.DIRECTIONAL_SHIELD) {
+                    applyOnHit = this.handleDirectionalShield(a, b, behavior);
                 }
 
                 if (applyOnHit && behavior.onHit) {
@@ -787,9 +827,11 @@
                 this.particles = [];
                 this.aiFunction = null;
                 this.age = 0;
+                this.player = { x: this.width / 2, y: this.height - 100, hp: 3, active: true, hitTimer: 0 };
+                this.playerConfig = {};
             }
 
-            reset(config, aiCode) {
+            reset(config, aiCode, playerConfig) {
                 this.enemy = {
                     world: { x: this.width / 2, y: 100 },
                     local: { x: 0, y: 0, angle: 0 },
@@ -802,6 +844,7 @@
                 this.bullets = [];
                 this.particles = [];
                 this.age = 0;
+                this.setPlayerConfig(playerConfig || this.playerConfig);
 
                 // Compile AI
                 try {
@@ -809,7 +852,40 @@
                 } catch (e) { console.error(e); }
             }
 
-            update() {
+            setPlayerConfig(cfg = {}) {
+                this.playerConfig = cfg;
+                const basePlayer = GameData.Library.Player || {};
+                this.player.color = cfg.color || basePlayer.color || '#0ff';
+                this.player.hp = cfg.hp || 3;
+                this.player.radius = cfg.radius || basePlayer.radius || 10;
+                this.player.collision = deepClone((basePlayer && basePlayer.collision) || {});
+                this.player.active = true;
+            }
+
+            getPlayerCollider() {
+                return {
+                    type: 'player',
+                    x: this.player.x,
+                    y: this.player.y,
+                    collision: deepClone(GameData.Library.Player && GameData.Library.Player.collision),
+                    radius: (GameData.Library.Player && GameData.Library.Player.collision && GameData.Library.Player.collision.size) || 6
+                };
+            }
+
+            createBulletFromDef(opts = {}, defOverride = null) {
+                const def = defOverride || {};
+                return buildBulletInstance({
+                    type: def.type || GameData.Types.E_BULLET,
+                    color: opts.color || def.color || '#ff0',
+                    size: opts.size || def.radius || 4,
+                    shape: opts.shape || def.shape || 'circle',
+                    speed: opts.speed || def.speed,
+                    collision: opts.collision || def.collision
+                }, def);
+            }
+
+            update(playerConfig) {
+                if (playerConfig) this.setPlayerConfig(playerConfig);
                 if (!this.enemy || !this.aiFunction) return;
 
                 this.enemy.age++;
@@ -817,13 +893,16 @@
 
                 const mockCtx = {
                     getPlayerPosition: () => ({ x: this.width / 2, y: this.height - 100 }),
-                    spawn: (type, x, y, opts) => {
-                        this.bullets.push({
-                            x: x, y: y,
-                            vx: opts.vx || 0, vy: opts.vy || 0,
-                            radius: opts.radius || 4,
-                            color: opts.color || '#ff0'
-                        });
+                    spawn: (type, x, y, opts = {}) => {
+                        const def = (typeof type === 'string') ? GameData.Library.Bullets[type] : (type && GameData.Library.Bullets[type.type]);
+                        const merged = Object.assign({}, opts, typeof type === 'object' ? type : null);
+                        const base = this.createBulletFromDef(merged, def);
+                        const angle = merged.angle !== undefined ? merged.angle * Math.PI / 180 : null;
+                        const speed = merged.speed || base.speed || Math.hypot(merged.vx || 0, merged.vy || 0) || 4;
+                        base.x = x; base.y = y; base.age = 0;
+                        base.vx = angle !== null ? Math.cos(angle) * speed : (merged.vx || def?.vx || 0);
+                        base.vy = angle !== null ? Math.sin(angle) * speed : (merged.vy || def?.vy || 0);
+                        this.bullets.push(base);
                     },
                     spawnEnemy: (id, x, y) => {
                         // Mock spawn enemy (visualize as particle for now)
@@ -852,20 +931,49 @@
                 this.enemy.world.x = this.enemy.local.x;
                 this.enemy.world.y = this.enemy.local.y;
 
-                this.bullets.forEach(b => { b.x += b.vx; b.y += b.vy; });
-                this.bullets = this.bullets.filter(b => b.x > 0 && b.x < this.width && b.y > 0 && b.y < this.height);
+                this.bullets.forEach(b => {
+                    b._blockedByShield = false;
+                    b.x += b.vx; b.y += b.vy;
+                });
+
+                const playerCollider = this.getPlayerCollider();
+                this.bullets.forEach(b => {
+                    if (!b.collision || !b.collision.mask || !b.collision.mask.includes(GameData.Types.LAYER_PLAYER)) return;
+                    if (this.checkOverlap(b, playerCollider)) {
+                        const playerBehavior = playerCollider.collision && playerCollider.collision.behavior;
+                        const shielded = playerBehavior && playerBehavior.type === GameData.Behaviors.DIRECTIONAL_SHIELD;
+                        const allowImpact = !shielded || this.handleDirectionalShield(playerCollider, b, playerBehavior);
+                        if (allowImpact && b.active !== false && !b._blockedByShield) {
+                            this.resolveCollision(b, playerCollider);
+                            if (this.player.active) {
+                                this.player.hp -= (b.power || 1);
+                                this.player.hitTimer = 6;
+                                if (this.player.hp <= 0) this.player.active = false;
+                            }
+                        }
+                    }
+                });
+
+                this.bullets.forEach(b => {
+                    if (!b.collision || !b.collision.mask || !b.collision.mask.includes(GameData.Types.LAYER_TERRAIN)) return;
+                    if (b.x < 0 || b.x > this.width || b.y < 0 || b.y > this.height) {
+                        this.resolveTerrainCollision(b);
+                    }
+                });
+
+                this.bullets = this.bullets.filter(b => b.active !== false && b.x > -40 && b.x < this.width + 40 && b.y > -40 && b.y < this.height + 40);
 
                 this.particles.forEach(p => { p.x += p.vx; p.y += p.vy; p.life--; });
                 this.particles = this.particles.filter(p => p.life > 0);
             }
 
-            draw() {
+            draw(playerConfig) {
                 this.ctx.fillStyle = '#111';
                 this.ctx.fillRect(0, 0, this.width, this.height);
 
                 this.ctx.strokeStyle = '#333';
                 this.ctx.beginPath();
-                this.ctx.arc(this.width / 2, this.height - 100, 10, 0, Math.PI * 2);
+                this.ctx.arc(this.width / 2, this.height - 100, this.player.radius || 10, 0, Math.PI * 2);
                 this.ctx.stroke();
 
                 if (this.enemy) {
@@ -881,10 +989,19 @@
                     this.ctx.restore();
                 }
 
+                if (this.player.active) {
+                    this.ctx.fillStyle = (this.player.hitTimer > 0) ? '#f88' : (playerConfig && playerConfig.color) || this.player.color;
+                    this.ctx.beginPath();
+                    this.ctx.arc(this.player.x, this.player.y, this.player.radius || 10, 0, Math.PI * 2);
+                    this.ctx.fill();
+                    if (this.player.hitTimer > 0) this.player.hitTimer--;
+                }
+
                 this.bullets.forEach(b => {
                     this.ctx.fillStyle = b.color;
                     this.ctx.beginPath();
-                    this.ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
+                    const radius = b.radius || b.size || (b.collision && b.collision.size) || 4;
+                    this.ctx.arc(b.x, b.y, Array.isArray(radius) ? Math.max(...radius) / 2 : radius, 0, Math.PI * 2);
                     this.ctx.fill();
                 });
 
@@ -894,6 +1011,36 @@
                 });
             }
         }
+
+        ['checkOverlap', 'handleDirectionalShield', 'reflectEntity', 'splitEntity', 'resolveCollision', 'resolveTerrainCollision'].forEach(fn => {
+            EnemySim.prototype[fn] = BulletSim.prototype[fn];
+        });
+
+        EnemySim.prototype.resolveCollision = function (a, b) {
+            if (!a.collision || !a.collision.behavior) return;
+            const behavior = a.collision.behavior;
+            let applyOnHit = true;
+
+            if (behavior.type === GameData.Behaviors.DESTROY) {
+                a.active = false;
+            } else if (behavior.type === GameData.Behaviors.PIERCE) {
+                if (behavior.pierce > 0) {
+                    behavior.pierce--;
+                } else {
+                    a.active = false;
+                }
+            } else if (behavior.type === GameData.Behaviors.REFLECT) {
+                this.reflectEntity(a, b, behavior);
+            } else if (behavior.type === GameData.Behaviors.SPLIT) {
+                this.splitEntity(a, behavior);
+            } else if (behavior.type === GameData.Behaviors.DIRECTIONAL_SHIELD) {
+                applyOnHit = this.handleDirectionalShield(a, b, behavior);
+            }
+
+            if (applyOnHit && behavior.onHit) {
+                // Enemy simulator currently omits damage resolution details
+            }
+        };
 
         const App = {
             views: {},
@@ -1091,7 +1238,7 @@
                         status.className = "status-msg status-ok";
                         aiTxt.classList.remove('error');
 
-                        this.enemySim.reset(this.state.enemyConfig, aiTxt.value);
+                        this.enemySim.reset(this.state.enemyConfig, aiTxt.value, this.state.playerConfig);
                     } catch (e) {
                         status.innerText = e.message;
                         status.className = "status-msg status-err";
@@ -1102,7 +1249,7 @@
                 document.getElementById('btn-load-enemy').addEventListener('click', load);
                 document.getElementById('btn-apply-enemy').addEventListener('click', apply);
                 document.getElementById('btn-reset-enemy').addEventListener('click', () => {
-                    this.enemySim.reset(this.state.enemyConfig, aiTxt.value);
+                    this.enemySim.reset(this.state.enemyConfig, aiTxt.value, this.state.playerConfig);
                 });
 
                 if (sel.options.length > 0) load();
@@ -1120,8 +1267,8 @@
                     this.bulletSim.update(this.state.playerConfig);
                     this.bulletSim.draw(this.state.playerConfig);
                 } else if (this.state.activeTab === 'enemy-sim') {
-                    this.enemySim.update();
-                    this.enemySim.draw();
+                    this.enemySim.update(this.state.playerConfig);
+                    this.enemySim.draw(this.state.playerConfig);
                 }
 
                 requestAnimationFrame(t => this.loop(t));
