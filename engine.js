@@ -151,17 +151,17 @@ function startGame(packName) {
 
 function spawnPlayer() {
     PLAYER = new Entity(GameData.Types.PLAYER, 300, 700);
-    PLAYER.radius = 4;
-    PLAYER.color = '#0ff';
-    PLAYER.shape = 'player';
-    // Player Collision Definition
-    PLAYER.collision = {
-        layer: GameData.Types.LAYER_PLAYER,
-        mask: [GameData.Types.LAYER_E_BULLET, GameData.Types.LAYER_ENEMY, GameData.Types.LAYER_BOSS, GameData.Types.LAYER_ITEM, GameData.Types.LAYER_TERRAIN],
-        shape: 'circle',
-        size: 4,
-        behavior: { type: GameData.Types.Behaviors.DESTROY }
-    };
+    const playerDef = GameData.Library.Player || {};
+    Object.assign(PLAYER, playerDef);
+    if (!PLAYER.collision) {
+        PLAYER.collision = {
+            layer: GameData.Types.LAYER_PLAYER,
+            mask: [GameData.Types.LAYER_E_BULLET, GameData.Types.LAYER_ENEMY, GameData.Types.LAYER_BOSS, GameData.Types.LAYER_ITEM, GameData.Types.LAYER_TERRAIN],
+            shape: 'circle',
+            size: 4,
+            behavior: { type: GameData.Types.Behaviors.DESTROY }
+        };
+    }
     ENTITIES.push(PLAYER);
 }
 
@@ -405,22 +405,8 @@ function updateGame() {
         PLAYER.local.y = Math.max(0, Math.min(800, PLAYER.local.y));
 
         if (INPUT.shot && PLAYER.age % 4 === 0) {
-            const b = new Entity(GameData.Types.P_BULLET, PLAYER.world.x, PLAYER.world.y - 10);
-            b.vy = -15;
-            b.color = '#fff';
-            b.shape = 'rect';
-            // Player Bullet Collision
-            b.collision = {
-                layer: GameData.Types.LAYER_P_BULLET,
-                mask: [GameData.Types.LAYER_ENEMY, GameData.Types.LAYER_BOSS, GameData.Types.LAYER_TERRAIN],
-                shape: 'rect',
-                size: [4, 16],
-                behavior: {
-                    type: GameData.Types.Behaviors.DESTROY,
-                    onHit: { type: 'damage', value: 1 }
-                }
-            };
-            ENTITIES.push(b);
+            const shotId = PLAYER.shot || (GameData.Library.Player && GameData.Library.Player.shot) || 'player_normal';
+            GAME_CONTEXT.spawnBullet(shotId, PLAYER.world.x, PLAYER.world.y - 10);
         }
 
         if (INPUT.bomb && GAME_STATS.bombs > 0) {

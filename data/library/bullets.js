@@ -163,4 +163,22 @@
             b.radius = 8 + Math.sin(b.age * 0.2) * 2;
         `
     });
+
+    // Player Normal Shot
+    GameData.registerBullet('player_normal', {
+        type: GameData.Types.P_BULLET,
+        color: '#fff',
+        shape: 'rect',
+        vy: -15,
+        collision: {
+            layer: GameData.Types.LAYER_P_BULLET,
+            mask: [GameData.Types.LAYER_ENEMY, GameData.Types.LAYER_BOSS, GameData.Types.LAYER_TERRAIN],
+            shape: 'rect',
+            size: [4, 16],
+            behavior: {
+                type: GameData.Types.Behaviors.DESTROY,
+                onHit: { type: 'damage', value: 1 }
+            }
+        }
+    });
 })();

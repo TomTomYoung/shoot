@@ -32,7 +32,21 @@ const GameData = {
         Bullets: {},
         Terrains: {},
         Scripts: {},
-        Noise: {}
+        Noise: {},
+        Player: {
+            // Default player collision profile
+            collision: {
+                layer: 'player',
+                mask: ['e_bullet', 'enemy', 'boss', 'item', 'terrain'],
+                shape: 'circle',
+                size: 4,
+                behavior: { type: 'destroy' }
+            },
+            color: '#0ff',
+            radius: 4,
+            shape: 'player',
+            shot: 'player_normal'
+        }
     },
     CurrentPack: null,
 
