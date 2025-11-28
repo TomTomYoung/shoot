@@ -300,20 +300,37 @@
         ];
 
         const DATA_BASE_CANDIDATES = (() => {
-            const currentDir = new URL('./', document.location.href);
-            const parentDir = new URL('../', document.location.href);
+            const bases = [];
+            const url = new URL(document.location.href);
+
+            // Walk up to four levels to find the actual repo root when served from nested paths
+            const segments = url.pathname.split('/').filter(Boolean);
+            for (let i = segments.length; i >= Math.max(segments.length - 4, 0); i--) {
+                const path = segments.slice(0, i).join('/') + '/';
+                const candidate = new URL(path, `${url.protocol}//${url.host}/`);
+                if (!bases.find(b => b.href === candidate.href)) bases.push(candidate);
+            }
+
+            // Explicit repo root hint for hosted environments (e.g., /shoot/ on GitHub Pages)
             const repoRoot = new URL('/shoot/', document.location.origin);
-            const bases = [currentDir];
-
-            // Avoid duplicate attempts when paths collapse to the same URL
-            const maybeAdd = (url) => {
-                if (!bases.find(b => b.href === url.href)) bases.push(url);
-            };
-
-            maybeAdd(parentDir);
-            maybeAdd(repoRoot);
+            if (!bases.find(b => b.href === repoRoot.href)) bases.push(repoRoot);
             return bases;
         })();
+
+        const probeBase = async (base) => {
+            try {
+                const probeTargets = ['utils.js', 'data/core.js'];
+                for (const target of probeTargets) {
+                    const url = new URL(target, base);
+                    const res = await fetch(url, { method: 'HEAD' });
+                    const type = res.headers.get('content-type') || '';
+                    if (!res.ok || type.includes('text/html')) return false;
+                }
+                return true;
+            } catch (_) {
+                return false;
+            }
+        };
 
         const loadScript = (url) => new Promise((resolve, reject) => {
             const tag = document.createElement('script');
@@ -327,6 +344,11 @@
             if (window.GameData) return;
 
             for (const base of DATA_BASE_CANDIDATES) {
+                if (!(await probeBase(base))) {
+                    console.warn(`Skipped ${base} (missing data files)`);
+                    continue;
+                }
+
                 try {
                     for (const path of DATA_SCRIPTS) {
                         const scriptUrl = new URL(path, base);
@@ -760,6 +782,7 @@
             },
 
             init() {
+                this.noiseGen = new NoiseGenerator();
                 this.terrainSys = new TerrainSystem(this.noiseGen);
                 this.views.terrain = new Visualizer('canvas-terrain');
                 this.views.noise = new Visualizer('canvas-noise');
