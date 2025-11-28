@@ -335,65 +335,13 @@ function cloneCollision(collision) {
     return cloned;
 }
 
-function defaultCollisionForEntity(e) {
-    const size = () => {
-        if (Array.isArray(e.size)) return [...e.size];
-        if (typeof e.size === 'number') return e.size;
-        return e.radius || 4;
-    };
-
-    switch (e.type) {
-        case GameData.Types.ENEMY:
-            return {
-                layer: GameData.Types.LAYER_ENEMY,
-                mask: [GameData.Types.LAYER_P_BULLET, GameData.Types.LAYER_PLAYER],
-                shape: e.shape || 'circle',
-                size: size(),
-                behavior: { type: GameData.Behaviors.DESTROY }
-            };
-        case GameData.Types.P_BULLET:
-            return {
-                layer: GameData.Types.LAYER_P_BULLET,
-                mask: [GameData.Types.LAYER_ENEMY, GameData.Types.LAYER_BOSS, GameData.Types.LAYER_TERRAIN],
-                shape: e.shape || 'circle',
-                size: size(),
-                behavior: { type: GameData.Behaviors.DESTROY, onHit: { type: 'damage', value: e.power || 1 } }
-            };
-        case GameData.Types.E_BULLET:
-            return {
-                layer: GameData.Types.LAYER_E_BULLET,
-                mask: [GameData.Types.LAYER_PLAYER, GameData.Types.LAYER_TERRAIN],
-                shape: e.shape || 'circle',
-                size: size(),
-                behavior: { type: GameData.Behaviors.DESTROY }
-            };
-        case GameData.Types.ITEM:
-            return {
-                layer: GameData.Types.LAYER_ITEM,
-                mask: [GameData.Types.LAYER_PLAYER],
-                shape: e.shape || 'circle',
-                size: size()
-            };
-        case GameData.Types.BOSS:
-            return {
-                layer: GameData.Types.LAYER_BOSS,
-                mask: [GameData.Types.LAYER_P_BULLET, GameData.Types.LAYER_PLAYER],
-                shape: e.shape || 'circle',
-                size: size()
-            };
-        default:
-            return null;
-    }
-}
-
 function ensureCollision(e) {
     if (e.collision) {
         e.collision = cloneCollision(e.collision);
         return;
     }
 
-    const fallback = defaultCollisionForEntity(e);
-    if (fallback) e.collision = fallback;
+    throw new Error(`Collision metadata missing for entity type ${e.type}`);
 }
 
 function isDestroyBehavior(collision) {
@@ -660,6 +608,12 @@ function trySpawnItem(x, y) {
         item.vy = 2;
         item.radius = 8;
         item.color = type === 'bomb' ? '#f00' : '#0f0';
+        item.collision = {
+            layer: GameData.Types.LAYER_ITEM,
+            mask: [GameData.Types.LAYER_PLAYER],
+            shape: 'circle',
+            size: item.radius
+        };
         ensureCollision(item);
         ENTITIES.push(item);
     }

@@ -2,13 +2,21 @@
  * Boss Library
  */
 (function () {
+    const bossBulletCollision = (shape, size, behavior = { type: GameData.Behaviors.DESTROY }) => ({
+        layer: GameData.Types.LAYER_E_BULLET,
+        mask: [GameData.Types.LAYER_PLAYER, GameData.Types.LAYER_TERRAIN],
+        shape: shape || 'circle',
+        size: Array.isArray(size) ? [...size] : size,
+        behavior
+    });
+
     // Bullet Hell Boss
     GameData.registerBoss('scarlet_devil', {
         name: "Scarlet Devil",
         hp: 2000, radius: 40, color: '#f00', score: 50000,
         collision: {
             layer: GameData.Types.LAYER_BOSS,
-            mask: [],
+            mask: [GameData.Types.LAYER_P_BULLET, GameData.Types.LAYER_PLAYER],
             shape: 'circle',
             size: 40
         },
@@ -21,7 +29,8 @@
                     const a = (me.age * 0.05) + (i * (Math.PI * 2 / 20));
                     ctx.spawn(GameData.Types.E_BULLET, me.world.x, me.world.y, {
                         vx: Math.cos(a) * 2, vy: Math.sin(a) * 2,
-                        radius: 3, color: '#f00'
+                        radius: 3, color: '#f00',
+                        collision: bossBulletCollision('circle', 3)
                     });
                 }
             }
@@ -29,7 +38,8 @@
                 const a = Math.random() * Math.PI * 2;
                 ctx.spawn(GameData.Types.E_BULLET, me.world.x, me.world.y, {
                     vx: Math.cos(a) * 4, vy: Math.sin(a) * 4,
-                    radius: 2, color: '#fff'
+                    radius: 2, color: '#fff',
+                    collision: bossBulletCollision('circle', 2)
                 });
             }
         }
@@ -41,7 +51,7 @@
         hp: 3000, radius: 60, color: '#d00', score: 100000,
         collision: {
             layer: GameData.Types.LAYER_BOSS,
-            mask: [],
+            mask: [GameData.Types.LAYER_P_BULLET, GameData.Types.LAYER_PLAYER],
             shape: 'circle',
             size: 60
         },
@@ -53,7 +63,8 @@
                 const angle = Math.atan2(p.y - me.world.y, p.x - me.world.x);
                 ctx.spawn(GameData.Types.E_BULLET, me.world.x, me.world.y, {
                     vx: Math.cos(angle) * 5, vy: Math.sin(angle) * 5,
-                    radius: 15, color: '#f40'
+                    radius: 15, color: '#f40',
+                    collision: bossBulletCollision('circle', 15)
                 });
             }
 
@@ -70,7 +81,7 @@
         hp: 5000, radius: 80, color: '#44f', score: 200000,
         collision: {
             layer: GameData.Types.LAYER_BOSS,
-            mask: [],
+            mask: [GameData.Types.LAYER_P_BULLET, GameData.Types.LAYER_PLAYER],
             shape: 'circle',
             size: 80
         },
@@ -82,7 +93,8 @@
                 for (let i = 0; i < 20; i++) {
                     ctx.spawn(GameData.Types.E_BULLET, me.world.x, me.world.y + i * 20, {
                         vx: 0, vy: 10,
-                        radius: 10, color: '#0ff'
+                        radius: 10, color: '#0ff',
+                        collision: bossBulletCollision('circle', 10)
                     });
                 }
             }

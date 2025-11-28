@@ -2,6 +2,14 @@
  * Enemy Library
  */
 (function () {
+    const enemyBulletCollision = (shape, size, behavior = { type: GameData.Behaviors.DESTROY }) => ({
+        layer: GameData.Types.LAYER_E_BULLET,
+        mask: [GameData.Types.LAYER_PLAYER, GameData.Types.LAYER_TERRAIN],
+        shape: shape || 'circle',
+        size: Array.isArray(size) ? [...size] : size,
+        behavior
+    });
+
     // Bullet Hell Enemies
     GameData.registerEnemy('fairy', {
         hp: 5, radius: 12, color: '#f88', score: 100,
@@ -20,7 +28,8 @@
                     const angle = me.age * 0.1 + (i * (Math.PI * 2 / 3));
                     ctx.spawn(GameData.Types.E_BULLET, me.world.x, me.world.y, {
                         vx: Math.cos(angle) * 2, vy: Math.sin(angle) * 2,
-                        radius: 3, color: '#f0f'
+                        radius: 3, color: '#f0f',
+                        collision: enemyBulletCollision('circle', 3)
                     });
                 }
             }
@@ -44,7 +53,8 @@
                 for (let i = -2; i <= 2; i++) {
                     ctx.spawn(GameData.Types.E_BULLET, me.world.x, me.world.y, {
                         vx: Math.cos(angle + i * 0.2) * 3, vy: Math.sin(angle + i * 0.2) * 3,
-                        radius: 4, color: '#0ff'
+                        radius: 4, color: '#0ff',
+                        collision: enemyBulletCollision('circle', 4)
                     });
                 }
             }
@@ -70,7 +80,8 @@
                 const angle = Math.atan2(p.y - me.world.y, p.x - me.world.x);
                 ctx.spawn(GameData.Types.E_BULLET, me.world.x, me.world.y, {
                     vx: Math.cos(angle) * 3, vy: Math.sin(angle) * 3,
-                    radius: 5, color: '#ff0', homing: true
+                    radius: 5, color: '#ff0', homing: true,
+                    collision: enemyBulletCollision('circle', 5)
                 });
             }
         }
@@ -90,7 +101,8 @@
             if (me.age % 5 === 0) {
                 ctx.spawn(GameData.Types.E_BULLET, me.world.x, me.world.y + 20, {
                     vx: (Math.random() - 0.5) * 2, vy: 3,
-                    radius: 3, color: '#f80'
+                    radius: 3, color: '#f80',
+                    collision: enemyBulletCollision('circle', 3)
                 });
             }
         }
@@ -111,7 +123,8 @@
             if (me.age % 30 === 0) {
                 ctx.spawn(GameData.Types.E_BULLET, me.world.x, me.world.y, {
                     vx: 0, vy: 8,
-                    radius: 2, color: '#0f0'
+                    radius: 2, color: '#0f0',
+                    collision: enemyBulletCollision('circle', 2)
                 });
             }
         }
@@ -136,7 +149,8 @@
                         if (!me.active) return;
                         ctx.spawn(GameData.Types.E_BULLET, me.world.x, me.world.y, {
                             vx: Math.cos(angle) * 6, vy: Math.sin(angle) * 6,
-                            radius: 3, color: '#f00'
+                            radius: 3, color: '#f00',
+                            collision: enemyBulletCollision('circle', 3)
                         });
                     }, i * 100);
                 }
@@ -161,7 +175,8 @@
                 const vx = (playerPos.x - me.world.x) * 0.01;
                 const vy = (playerPos.y - me.world.y) * 0.01;
                 ctx.spawn(GameData.Types.E_BULLET, me.world.x, me.world.y, {
-                    vx: vx, vy: vy, radius: 4, color: '#ff0'
+                    vx: vx, vy: vy, radius: 4, color: '#ff0',
+                    collision: enemyBulletCollision('circle', 4)
                 });
             }
         }
@@ -207,7 +222,8 @@
                 const angle = Math.atan2(p.y - me.world.y, p.x - me.world.x);
                 ctx.spawn(GameData.Types.E_BULLET, me.world.x, me.world.y, {
                     vx: Math.cos(angle) * 8, vy: Math.sin(angle) * 8,
-                    radius: 2, color: '#ff0', shape: 'line', length: 15
+                    radius: 2, color: '#ff0', shape: 'line', length: 15,
+                    collision: enemyBulletCollision('rect', [2, 15])
                 });
             }
         }
@@ -228,7 +244,8 @@
             if (me.age > 60 && me.age < 200 && me.age % 5 === 0) {
                 ctx.spawn(GameData.Types.E_BULLET, me.world.x, me.world.y + 10, {
                     vx: (Math.random() - 0.5) * 1, vy: 5,
-                    radius: 3, color: '#fa0'
+                    radius: 3, color: '#fa0',
+                    collision: enemyBulletCollision('circle', 3)
                 });
             }
         }
@@ -253,7 +270,8 @@
                     const a = angle + i * Math.PI;
                     ctx.spawn(GameData.Types.E_BULLET, me.world.x, me.world.y, {
                         vx: Math.cos(a) * 3, vy: Math.sin(a) * 3,
-                        radius: 5, color: '#ff8', shape: 'star'
+                        radius: 5, color: '#ff8', shape: 'star',
+                        collision: enemyBulletCollision('circle', 5)
                     });
                 }
             }
@@ -277,7 +295,8 @@
                 const angle = Math.atan2(p.y - me.world.y, p.x - me.world.x);
                 ctx.spawn(GameData.Types.E_BULLET, me.world.x, me.world.y, {
                     vx: Math.cos(angle) * 2, vy: Math.sin(angle) * 2,
-                    radius: 10, color: '#a0f', shape: 'circle', pulse: true
+                    radius: 10, color: '#a0f', shape: 'circle', pulse: true,
+                    collision: enemyBulletCollision('circle', 10)
                 });
             }
         }

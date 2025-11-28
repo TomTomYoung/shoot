@@ -16,7 +16,7 @@ The project has successfully transitioned to a data-driven collision system.
    - *Action*: Create a focused test in the simulator or a specific test wave.
 
 2. **Cleanup**:
-   - `engine.js` still contains some default/fallback collision logic (`defaultCollisionForEntity`). Once we are confident all entities have explicit definitions, we can simplify this.
+   - Collision fallbacks were removed from `engine.js`; all entities now rely on explicit collision metadata.
 
 3. **Feature Expansion** (Optional):
    - With the new system, we can easily add more complex behaviors like:
