@@ -24,7 +24,10 @@ const GameData = {
     Behaviors: {
         DESTROY: 'destroy',
         PIERCE: 'pierce',
-        BOUNCE: 'bounce'
+        BOUNCE: 'bounce',
+        REFLECT: 'reflect',
+        SPLIT: 'split',
+        DIRECTIONAL_SHIELD: 'directional_shield'
     },
     Packs: {}, // Registry for Game Packs (Genres)
     Library: { // Shared Data Library
