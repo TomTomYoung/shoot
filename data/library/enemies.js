@@ -325,4 +325,54 @@
             ctx.strokeRect(-w / 2, -h / 2, w, h);
         }
     });
+
+    // Shield drone to evaluate directional blocking and reflection
+    GameData.registerEnemy('shield_drone', {
+        hp: 18, radius: 14, color: '#49f', score: 450,
+        shape: 'triangle',
+        collision: {
+            layer: GameData.Types.LAYER_ENEMY,
+            mask: [GameData.Types.LAYER_P_BULLET, GameData.Types.LAYER_PLAYER],
+            shape: 'circle',
+            size: 14,
+            behavior: {
+                type: GameData.Behaviors.DIRECTIONAL_SHIELD,
+                direction: Math.PI / 2,
+                arc: Math.PI * 0.75,
+                response: 'reflect',
+                reflect: { axis: 'auto', maxBounces: 1, dampen: 1 }
+            }
+        },
+        ai: (me, ctx) => {
+            me.local.y += 1.2;
+            me.local.x += Math.sin(me.age * 0.04) * 2;
+            // Periodically fire ricochet orbs forward
+            if (me.age % 90 === 0) {
+                const angle = Math.PI / 2 + Math.sin(me.age * 0.03) * 0.3;
+                ctx.spawn(GameData.Types.E_BULLET, me.world.x, me.world.y + 10, {
+                    vx: Math.cos(angle) * 3,
+                    vy: Math.sin(angle) * 3,
+                    radius: 6,
+                    color: '#0af',
+                    collision: enemyBulletCollision('circle', 6, {
+                        type: GameData.Behaviors.REFLECT,
+                        axis: 'auto',
+                        maxBounces: 2,
+                        dampen: 0.9
+                    })
+                });
+            }
+        },
+        render: function (ctx) {
+            ctx.fillStyle = this.color;
+            ctx.beginPath();
+            ctx.moveTo(0, -this.radius);
+            ctx.lineTo(-this.radius, this.radius);
+            ctx.lineTo(this.radius, this.radius);
+            ctx.closePath();
+            ctx.fill();
+            ctx.strokeStyle = '#bdf';
+            ctx.stroke();
+        }
+    });
 })();

@@ -348,11 +348,94 @@ function isDestroyBehavior(collision) {
     return collision && collision.behavior && collision.behavior.type === GameData.Behaviors.DESTROY;
 }
 
+function reflectEntity(entity, target, behavior) {
+    if (!entity) return;
+    const axis = behavior.axis || 'auto';
+    let vx = entity.vx || 0;
+    let vy = entity.vy || 0;
+
+    const dampen = behavior.dampen !== undefined ? behavior.dampen : 1;
+
+    const flipVelocity = (flipX, flipY) => {
+        if (flipX) vx = -vx;
+        if (flipY) vy = -vy;
+    };
+
+    if (axis === 'horizontal') {
+        flipVelocity(false, true);
+    } else if (axis === 'vertical') {
+        flipVelocity(true, false);
+    } else if (axis === 'both') {
+        flipVelocity(true, true);
+    } else if (axis === 'auto' && target) {
+        const dx = entity.world.x - target.world.x;
+        const dy = entity.world.y - target.world.y;
+        flipVelocity(Math.abs(dx) > Math.abs(dy), Math.abs(dy) >= Math.abs(dx));
+    } else {
+        flipVelocity(true, true);
+    }
+
+    entity.vx = vx * dampen;
+    entity.vy = vy * dampen;
+    if (behavior.maxBounces !== undefined) {
+        entity._bounces = (entity._bounces || 0) + 1;
+        if (entity._bounces > behavior.maxBounces) entity.active = false;
+    }
+}
+
+function splitEntity(entity, behavior) {
+    const count = behavior.count || 3;
+    if (!behavior.bullet) return;
+
+    const spread = behavior.spread || Math.PI / 2;
+    const speed = behavior.speed || Math.hypot(entity.vx || 0, entity.vy || 0) || 4;
+    const baseAngle = behavior.baseAngle !== undefined ? behavior.baseAngle : Math.atan2(entity.vy || 0, entity.vx || 0);
+
+    for (let i = 0; i < count; i++) {
+        const t = count === 1 ? 0 : (i / (count - 1) - 0.5);
+        const angle = baseAngle + t * spread;
+        GAME_CONTEXT.spawnBullet(behavior.bullet, entity.world.x, entity.world.y, {
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed
+        });
+    }
+
+    entity.active = false;
+}
+
+function handleDirectionalShield(shield, other, behavior) {
+    if (!other) return true;
+    const direction = behavior.direction !== undefined ? behavior.direction : -Math.PI / 2; // Default facing up
+    const arc = behavior.arc !== undefined ? behavior.arc : Math.PI / 2;
+
+    const dx = other.world.x - shield.world.x;
+    const dy = other.world.y - shield.world.y;
+    const incoming = Math.atan2(dy, dx);
+    const delta = Math.atan2(Math.sin(incoming - direction), Math.cos(incoming - direction));
+    const withinShield = Math.abs(delta) <= arc / 2;
+
+    if (!withinShield) return true;
+
+    const response = behavior.response || 'reflect';
+    if (response === 'reflect') {
+        reflectEntity(other, shield, behavior.reflect || behavior);
+        other._blockedByShield = true;
+    } else if (response === 'absorb') {
+        other.active = false;
+        spawnParticle(other.world.x, other.world.y, other.color || '#88f');
+        other._blockedByShield = true;
+    }
+
+    return false;
+}
+
 function resolveCollision(a, b) {
     // Apply effects based on 'a' hitting 'b'
 
     const behavior = a.collision.behavior;
     if (!behavior) return;
+
+    let applyOnHit = true;
 
     // 1. Self Behavior
     if (behavior.type === GameData.Behaviors.DESTROY) {
@@ -364,10 +447,16 @@ function resolveCollision(a, b) {
         } else {
             a.active = false;
         }
+    } else if (behavior.type === GameData.Behaviors.REFLECT) {
+        reflectEntity(a, b, behavior);
+    } else if (behavior.type === GameData.Behaviors.SPLIT) {
+        splitEntity(a, behavior);
+    } else if (behavior.type === GameData.Behaviors.DIRECTIONAL_SHIELD) {
+        applyOnHit = handleDirectionalShield(a, b, behavior);
     }
 
     // 2. Target Effect (onHit)
-    if (behavior.onHit) {
+    if (applyOnHit && behavior.onHit) {
         const effects = Array.isArray(behavior.onHit) ? behavior.onHit : [behavior.onHit];
         effects.forEach(eff => {
             if (eff.type === 'damage') {
@@ -390,7 +479,7 @@ function resolveCollision(a, b) {
                 }
             }
         });
-    } else {
+    } else if (applyOnHit) {
         // Default damage if not specified but collision happened?
         // For backward compatibility or simple logic:
         if (a.type === GameData.Types.P_BULLET && (b.type === GameData.Types.ENEMY || b.type === GameData.Types.BOSS)) {
@@ -405,6 +494,26 @@ function resolveCollision(a, b) {
                 }
             }
         }
+    }
+}
+
+function resolveTerrainCollision(entity) {
+    if (!entity.collision || !entity.collision.behavior) return;
+    const behavior = entity.collision.behavior;
+    if (behavior.type === GameData.Behaviors.DESTROY) {
+        entity.active = false;
+        spawnParticle(entity.world.x, entity.world.y, '#888', 2);
+    } else if (behavior.type === GameData.Behaviors.PIERCE) {
+        if (behavior.pierce > 0) {
+            behavior.pierce--;
+        } else {
+            entity.active = false;
+            spawnParticle(entity.world.x, entity.world.y, '#888', 2);
+        }
+    } else if (behavior.type === GameData.Behaviors.REFLECT) {
+        reflectEntity(entity, null, behavior);
+    } else if (behavior.type === GameData.Behaviors.SPLIT) {
+        splitEntity(entity, behavior);
     }
 }
 
@@ -493,10 +602,7 @@ function updateGame() {
         if (a.collision.mask.includes(GameData.Types.LAYER_TERRAIN)) {
             if (checkCollision(a.world.x, a.world.y)) {
                 // Hit Terrain
-                if (isDestroyBehavior(a.collision)) {
-                    a.active = false;
-                    spawnParticle(a.world.x, a.world.y, '#888', 2);
-                }
+                resolveTerrainCollision(a);
                 if (a.type === GameData.Types.PLAYER) playerHit();
             }
         }
@@ -528,15 +634,36 @@ function updateGame() {
                     spawnParticle(b.world.x, b.world.y, '#ff0');
                 }
             } else if (checkOverlap(a, b)) {
-                if (aTargetsB) {
-                    resolveCollision(a, b);
-                    if (b.type === GameData.Types.PLAYER) playerHit();
-                    if (b.type === GameData.Types.ITEM && a.type === GameData.Types.PLAYER) collectItem(b);
-                }
-                if (bTargetsA && a.active && b.active) {
-                    resolveCollision(b, a);
-                    if (a.type === GameData.Types.PLAYER) playerHit();
-                    if (a.type === GameData.Types.ITEM && b.type === GameData.Types.PLAYER) collectItem(a);
+                const shieldPriority =
+                    (aTargetsB && b.collision.behavior && b.collision.behavior.type === GameData.Behaviors.DIRECTIONAL_SHIELD) ||
+                    (bTargetsA && a.collision.behavior && a.collision.behavior.type === GameData.Behaviors.DIRECTIONAL_SHIELD);
+
+                const processAB = () => {
+                    if (a._blockedByShield) {
+                        delete a._blockedByShield;
+                        return;
+                    }
+                    if (aTargetsB) {
+                        resolveCollision(a, b);
+                        if (b.type === GameData.Types.PLAYER) playerHit();
+                        if (b.type === GameData.Types.ITEM && a.type === GameData.Types.PLAYER) collectItem(b);
+                    }
+                };
+
+                const processBA = () => {
+                    if (bTargetsA && a.active && b.active) {
+                        resolveCollision(b, a);
+                        if (a.type === GameData.Types.PLAYER) playerHit();
+                        if (a.type === GameData.Types.ITEM && b.type === GameData.Types.PLAYER) collectItem(a);
+                    }
+                };
+
+                if (shieldPriority) {
+                    processBA();
+                    if (a.active && b.active) processAB();
+                } else {
+                    processAB();
+                    if (a.active && b.active) processBA();
                 }
             }
         }

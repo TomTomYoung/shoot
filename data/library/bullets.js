@@ -188,6 +188,56 @@
         `
     });
 
+    // Ricochet orb to validate reflection and bounce dampening against terrain and shields
+    GameData.registerBullet('ricochet_orb', {
+        type: GameData.Types.E_BULLET,
+        color: '#0af',
+        radius: 6,
+        shape: 'circle',
+        collision: {
+            layer: GameData.Types.LAYER_E_BULLET,
+            mask: [GameData.Types.LAYER_PLAYER, GameData.Types.LAYER_TERRAIN],
+            shape: 'circle',
+            size: 6,
+            behavior: {
+                type: GameData.Behaviors.REFLECT,
+                axis: 'auto',
+                maxBounces: 3,
+                dampen: 0.92
+            }
+        },
+        behavior: `
+            b.x += b.vx;
+            b.y += b.vy;
+        `
+    });
+
+    // Player burst shot that splits into a spread on hit
+    GameData.registerBullet('split_burst', {
+        type: GameData.Types.P_BULLET,
+        color: '#6ff',
+        shape: 'rect',
+        vy: -12,
+        collision: {
+            layer: GameData.Types.LAYER_P_BULLET,
+            mask: [GameData.Types.LAYER_ENEMY, GameData.Types.LAYER_BOSS, GameData.Types.LAYER_TERRAIN],
+            shape: 'rect',
+            size: [5, 18],
+            behavior: {
+                type: GameData.Behaviors.SPLIT,
+                bullet: 'player_normal',
+                count: 5,
+                spread: Math.PI / 2,
+                speed: 10,
+                onHit: { type: 'damage', value: 2 }
+            }
+        },
+        behavior: `
+            b.x += b.vx;
+            b.y += b.vy;
+        `
+    });
+
     // Player Normal Shot
     GameData.registerBullet('player_normal', {
         type: GameData.Types.P_BULLET,
