@@ -760,6 +760,7 @@
             },
 
             init() {
+                this.noiseGen = new NoiseGenerator();
                 this.terrainSys = new TerrainSystem(this.noiseGen);
                 this.views.terrain = new Visualizer('canvas-terrain');
                 this.views.noise = new Visualizer('canvas-noise');
