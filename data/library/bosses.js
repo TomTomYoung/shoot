@@ -6,6 +6,12 @@
     GameData.registerBoss('scarlet_devil', {
         name: "Scarlet Devil",
         hp: 2000, radius: 40, color: '#f00', score: 50000,
+        collision: {
+            layer: GameData.Types.LAYER_BOSS,
+            mask: [],
+            shape: 'circle',
+            size: 40
+        },
         ai: (me, ctx) => {
             me.local.y = 150 + Math.sin(me.age * 0.01) * 20;
             me.local.x = 300 + Math.cos(me.age * 0.02) * 150;
@@ -33,6 +39,12 @@
     GameData.registerBoss('ancient_dragon', {
         name: "Ancient Dragon",
         hp: 3000, radius: 60, color: '#d00', score: 100000,
+        collision: {
+            layer: GameData.Types.LAYER_BOSS,
+            mask: [],
+            shape: 'circle',
+            size: 60
+        },
         ai: (me, ctx) => {
             me.local.y = 100 + Math.sin(me.age * 0.005) * 50;
 
@@ -56,6 +68,12 @@
     GameData.registerBoss('mothership', {
         name: "Mothership",
         hp: 5000, radius: 80, color: '#44f', score: 200000,
+        collision: {
+            layer: GameData.Types.LAYER_BOSS,
+            mask: [],
+            shape: 'circle',
+            size: 80
+        },
         ai: (me, ctx) => {
             me.local.y = 100;
             me.local.x = 300 + Math.sin(me.age * 0.01) * 200;

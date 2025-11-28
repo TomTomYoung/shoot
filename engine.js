@@ -64,6 +64,7 @@ const GAME_CONTEXT = {
     spawn: (type, x, y, props, returnEntity) => {
         const e = new Entity(type, x, y);
         if (props) Object.assign(e, props);
+        ensureCollision(e);
         ENTITIES.push(e);
         return returnEntity ? e : undefined;
     },
@@ -76,6 +77,8 @@ const GAME_CONTEXT = {
         if (!def) return;
         const e = new Entity(GameData.Types.ENEMY, x, y);
         Object.assign(e, def);
+        if (def.collision) e.collision = cloneCollision(def.collision);
+        ensureCollision(e);
         ENTITIES.push(e);
     },
     spawnBoss: (archetype, x, y) => {
@@ -86,6 +89,8 @@ const GAME_CONTEXT = {
                 const def = GameData.CurrentPack.Boss;
                 const e = new Entity(GameData.Types.BOSS, x, y);
                 Object.assign(e, def);
+                if (def.collision) e.collision = cloneCollision(def.collision);
+                ensureCollision(e);
                 if (def.grid) e.grid = JSON.parse(JSON.stringify(def.grid));
                 ENTITIES.push(e);
                 if (def.init) def.init(e, GAME_CONTEXT);
@@ -101,6 +106,8 @@ const GAME_CONTEXT = {
 
         const e = new Entity(GameData.Types.BOSS, x, y);
         Object.assign(e, def);
+        if (def.collision) e.collision = cloneCollision(def.collision);
+        ensureCollision(e);
         if (def.grid) e.grid = JSON.parse(JSON.stringify(def.grid));
         ENTITIES.push(e);
         if (def.init) def.init(e, GAME_CONTEXT);
@@ -112,7 +119,10 @@ const GAME_CONTEXT = {
         if (!def) return;
         const b = new Entity(def.type || GameData.Types.E_BULLET, x, y);
         Object.assign(b, def);
+        if (def.collision) b.collision = cloneCollision(def.collision);
+        ensureCollision(b);
         if (props) Object.assign(b, props);
+        ensureCollision(b);
         ENTITIES.push(b);
         return b;
     },
@@ -151,17 +161,21 @@ function startGame(packName) {
 
 function spawnPlayer() {
     PLAYER = new Entity(GameData.Types.PLAYER, 300, 700);
-    PLAYER.radius = 4;
-    PLAYER.color = '#0ff';
-    PLAYER.shape = 'player';
-    // Player Collision Definition
-    PLAYER.collision = {
-        layer: GameData.Types.LAYER_PLAYER,
-        mask: [GameData.Types.LAYER_E_BULLET, GameData.Types.LAYER_ENEMY, GameData.Types.LAYER_BOSS, GameData.Types.LAYER_ITEM, GameData.Types.LAYER_TERRAIN],
-        shape: 'circle',
-        size: 4,
-        behavior: { type: GameData.Types.Behaviors.DESTROY }
-    };
+    const playerDef = GameData.Library.Player || {};
+    Object.assign(PLAYER, playerDef);
+    if (!PLAYER.collision) {
+        PLAYER.collision = {
+            layer: GameData.Types.LAYER_PLAYER,
+            mask: [GameData.Types.LAYER_E_BULLET, GameData.Types.LAYER_ENEMY, GameData.Types.LAYER_BOSS, GameData.Types.LAYER_ITEM, GameData.Types.LAYER_TERRAIN],
+            shape: 'circle',
+            size: 4
+        };
+    } else {
+        PLAYER.collision = cloneCollision(PLAYER.collision);
+        if (PLAYER.collision.behavior && PLAYER.collision.behavior.type === GameData.Behaviors.DESTROY) {
+            delete PLAYER.collision.behavior;
+        }
+    }
     ENTITIES.push(PLAYER);
 }
 
@@ -309,6 +323,80 @@ function checkOverlap(a, b) {
     return false;
 }
 
+function cloneCollision(collision) {
+    if (!collision) return collision;
+    const cloned = { ...collision };
+    if (Array.isArray(collision.mask)) cloned.mask = [...collision.mask];
+    if (Array.isArray(collision.size)) cloned.size = [...collision.size];
+    if (collision.behavior) cloned.behavior = JSON.parse(JSON.stringify(collision.behavior));
+    return cloned;
+}
+
+function defaultCollisionForEntity(e) {
+    const size = () => {
+        if (Array.isArray(e.size)) return [...e.size];
+        if (typeof e.size === 'number') return e.size;
+        return e.radius || 4;
+    };
+
+    switch (e.type) {
+        case GameData.Types.ENEMY:
+            return {
+                layer: GameData.Types.LAYER_ENEMY,
+                mask: [GameData.Types.LAYER_P_BULLET, GameData.Types.LAYER_PLAYER],
+                shape: e.shape || 'circle',
+                size: size(),
+                behavior: { type: GameData.Behaviors.DESTROY }
+            };
+        case GameData.Types.P_BULLET:
+            return {
+                layer: GameData.Types.LAYER_P_BULLET,
+                mask: [GameData.Types.LAYER_ENEMY, GameData.Types.LAYER_BOSS, GameData.Types.LAYER_TERRAIN],
+                shape: e.shape || 'circle',
+                size: size(),
+                behavior: { type: GameData.Behaviors.DESTROY, onHit: { type: 'damage', value: e.power || 1 } }
+            };
+        case GameData.Types.E_BULLET:
+            return {
+                layer: GameData.Types.LAYER_E_BULLET,
+                mask: [GameData.Types.LAYER_PLAYER, GameData.Types.LAYER_TERRAIN],
+                shape: e.shape || 'circle',
+                size: size(),
+                behavior: { type: GameData.Behaviors.DESTROY }
+            };
+        case GameData.Types.ITEM:
+            return {
+                layer: GameData.Types.LAYER_ITEM,
+                mask: [GameData.Types.LAYER_PLAYER],
+                shape: e.shape || 'circle',
+                size: size()
+            };
+        case GameData.Types.BOSS:
+            return {
+                layer: GameData.Types.LAYER_BOSS,
+                mask: [GameData.Types.LAYER_P_BULLET, GameData.Types.LAYER_PLAYER],
+                shape: e.shape || 'circle',
+                size: size()
+            };
+        default:
+            return null;
+    }
+}
+
+function ensureCollision(e) {
+    if (e.collision) {
+        e.collision = cloneCollision(e.collision);
+        return;
+    }
+
+    const fallback = defaultCollisionForEntity(e);
+    if (fallback) e.collision = fallback;
+}
+
+function isDestroyBehavior(collision) {
+    return collision && collision.behavior && collision.behavior.type === GameData.Behaviors.DESTROY;
+}
+
 function resolveCollision(a, b) {
     // Apply effects based on 'a' hitting 'b'
 
@@ -316,10 +404,10 @@ function resolveCollision(a, b) {
     if (!behavior) return;
 
     // 1. Self Behavior
-    if (behavior.type === GameData.Types.Behaviors.DESTROY) {
+    if (behavior.type === GameData.Behaviors.DESTROY) {
         a.active = false;
         spawnParticle(a.world.x, a.world.y, a.color || '#fff');
-    } else if (behavior.type === GameData.Types.Behaviors.PIERCE) {
+    } else if (behavior.type === GameData.Behaviors.PIERCE) {
         if (behavior.pierce > 0) {
             behavior.pierce--;
         } else {
@@ -405,22 +493,8 @@ function updateGame() {
         PLAYER.local.y = Math.max(0, Math.min(800, PLAYER.local.y));
 
         if (INPUT.shot && PLAYER.age % 4 === 0) {
-            const b = new Entity(GameData.Types.P_BULLET, PLAYER.world.x, PLAYER.world.y - 10);
-            b.vy = -15;
-            b.color = '#fff';
-            b.shape = 'rect';
-            // Player Bullet Collision
-            b.collision = {
-                layer: GameData.Types.LAYER_P_BULLET,
-                mask: [GameData.Types.LAYER_ENEMY, GameData.Types.LAYER_BOSS, GameData.Types.LAYER_TERRAIN],
-                shape: 'rect',
-                size: [4, 16],
-                behavior: {
-                    type: GameData.Types.Behaviors.DESTROY,
-                    onHit: { type: 'damage', value: 1 }
-                }
-            };
-            ENTITIES.push(b);
+            const shotId = PLAYER.shot || (GameData.Library.Player && GameData.Library.Player.shot) || 'player_normal';
+            GAME_CONTEXT.spawnBullet(shotId, PLAYER.world.x, PLAYER.world.y - 10);
         }
 
         if (INPUT.bomb && GAME_STATS.bombs > 0) {
@@ -462,56 +536,63 @@ function updateGame() {
     // Filter entities with collision props
     const colliders = ENTITIES.filter(e => e.active && e.collision);
 
+    // 1. Terrain Check
     colliders.forEach(a => {
         if (!a.active) return;
-
-        // 1. Terrain Check
         if (a.collision.mask.includes(GameData.Types.LAYER_TERRAIN)) {
             if (checkCollision(a.world.x, a.world.y)) {
                 // Hit Terrain
-                if (a.collision.behavior.type === GameData.Types.Behaviors.DESTROY) {
+                if (isDestroyBehavior(a.collision)) {
                     a.active = false;
                     spawnParticle(a.world.x, a.world.y, '#888', 2);
                 }
                 if (a.type === GameData.Types.PLAYER) playerHit();
             }
         }
+    });
 
-        // 2. Entity vs Entity
-        colliders.forEach(b => {
-            if (a === b || !b.active) return;
+    // 2. Entity vs Entity (pairwise to avoid double-processing)
+    for (let i = 0; i < colliders.length; i++) {
+        const a = colliders[i];
+        if (!a.active) continue;
 
-            // Check if 'a' targets 'b'
-            if (a.collision.mask.includes(b.collision.layer)) {
+        for (let j = i + 1; j < colliders.length; j++) {
+            const b = colliders[j];
+            if (!b.active) continue;
 
-                // Special Case: Boss Grid
-                if (b.type === GameData.Types.BOSS && b.grid) {
-                    if (resolveBossHit(b, a)) { // Note: resolveBossHit handles logic internally for now
-                        // If hit, apply 'a' behavior
-                        if (a.collision.behavior.type === GameData.Types.Behaviors.DESTROY) {
-                            a.active = false;
-                            spawnParticle(a.world.x, a.world.y, '#ff0');
-                        }
-                    }
-                    return;
+            const aTargetsB = a.collision.mask.includes(b.collision.layer);
+            const bTargetsA = b.collision.mask.includes(a.collision.layer);
+
+            if (!aTargetsB && !bTargetsA) continue;
+
+            // Boss grid stays directional (attacker -> boss grid)
+            if (aTargetsB && b.type === GameData.Types.BOSS && b.grid) {
+                if (resolveBossHit(b, a) && isDestroyBehavior(a.collision)) {
+                    a.active = false;
+                    spawnParticle(a.world.x, a.world.y, '#ff0');
                 }
-
-                if (checkOverlap(a, b)) {
+            } else if (bTargetsA && a.type === GameData.Types.BOSS && a.grid) {
+                if (resolveBossHit(a, b) && isDestroyBehavior(b.collision)) {
+                    b.active = false;
+                    spawnParticle(b.world.x, b.world.y, '#ff0');
+                }
+            } else if (checkOverlap(a, b)) {
+                if (aTargetsB) {
                     resolveCollision(a, b);
-
-                    // Special Case: Player Hit
-                    if (b.type === GameData.Types.PLAYER) {
-                        playerHit();
-                    }
-                    // Special Case: Item Collection
-                    if (b.type === GameData.Types.ITEM && a.type === GameData.Types.PLAYER) {
-                        collectItem(b);
-                    }
+                    if (b.type === GameData.Types.PLAYER) playerHit();
+                    if (b.type === GameData.Types.ITEM && a.type === GameData.Types.PLAYER) collectItem(b);
+                }
+                if (bTargetsA && a.active && b.active) {
+                    resolveCollision(b, a);
+                    if (a.type === GameData.Types.PLAYER) playerHit();
+                    if (a.type === GameData.Types.ITEM && b.type === GameData.Types.PLAYER) collectItem(a);
                 }
             }
-        });
+        }
+    }
 
-        // Out of bounds check for bullets
+    // 3. Out of bounds check for bullets
+    colliders.forEach(a => {
         if ((a.type === GameData.Types.P_BULLET || a.type === GameData.Types.E_BULLET) && (a.world.y < -50 || a.world.y > 850 || a.world.x < -50 || a.world.x > 650)) {
             a.active = false;
         }
@@ -576,6 +657,7 @@ function trySpawnItem(x, y) {
         item.vy = 2;
         item.radius = 8;
         item.color = type === 'bomb' ? '#f00' : '#0f0';
+        ensureCollision(item);
         ENTITIES.push(item);
     }
 }
