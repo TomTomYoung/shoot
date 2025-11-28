@@ -231,6 +231,10 @@
     "color": "#0ff"
 }</textarea>
 
+            <h3>Player Collision (JSON)</h3>
+            <textarea id="input-player-collision" class="code-editor" spellcheck="false"
+                style="height:100px;"></textarea>
+
             <h3>Bullet Selection (Global Library)</h3>
             <div class="row">
                 <select id="select-bullet" class="flex-1"></select>
@@ -278,6 +282,10 @@
 
             <h3>Enemy Config</h3>
             <textarea id="input-enemy-config" spellcheck="false" style="height:100px; color:#8f8;"></textarea>
+
+            <h3>Player Collision (Shared JSON)</h3>
+            <textarea id="input-player-collision-enemy" class="code-editor" spellcheck="false"
+                style="height:100px;"></textarea>
 
             <h3>AI Logic (AST Parsed)</h3>
             <textarea id="input-enemy-ai" class="code-editor" spellcheck="false"></textarea>
@@ -507,6 +515,7 @@
                 this.spawnLogic = null;
                 this.behaviorLogic = null;
                 this.activeBulletDef = null;
+                this.playerCollision = null;
                 this.time = 0;
 
                 window.addEventListener('keydown', e => this.keys[e.key.toLowerCase()] = true);
@@ -649,7 +658,7 @@
 
             // --- Collision Helpers (aligns with engine behaviors) ---
             getPlayerCollider() {
-                const playerCollision = GameData.Library.Player && GameData.Library.Player.collision;
+                const playerCollision = this.playerCollision || (GameData.Library.Player && GameData.Library.Player.collision);
                 return {
                     type: 'player',
                     x: this.player.x,
@@ -657,6 +666,10 @@
                     collision: resolveCollisionValue(playerCollision, this.player.radius, buildPlayerCollisionTemplate),
                     radius: (playerCollision && playerCollision.size) || this.player.radius || 6
                 };
+            }
+
+            setPlayerCollision(collision) {
+                this.playerCollision = collision ? deepClone(collision) : null;
             }
 
             createBulletFromDef(opts = {}, defOverride = null) {
@@ -862,6 +875,7 @@
                 this.age = 0;
                 this.player = { x: this.width / 2, y: this.height - 100, hp: 3, active: true, hitTimer: 0 };
                 this.playerConfig = {};
+                this.playerCollision = null;
             }
 
             reset(config, aiCode, playerConfig) {
@@ -891,7 +905,7 @@
                 this.player.color = cfg.color || basePlayer.color || '#0ff';
                 this.player.hp = cfg.hp || 3;
                 this.player.radius = cfg.radius || basePlayer.radius || 10;
-                const playerCollision = (basePlayer && basePlayer.collision);
+                const playerCollision = this.playerCollision || (basePlayer && basePlayer.collision);
                 this.player.collision = resolveCollisionValue(playerCollision, this.player.radius, buildPlayerCollisionTemplate);
                 this.player.active = true;
             }
@@ -901,9 +915,13 @@
                     type: 'player',
                     x: this.player.x,
                     y: this.player.y,
-                    collision: resolveCollisionValue(GameData.Library.Player && GameData.Library.Player.collision, this.player.radius, buildPlayerCollisionTemplate),
-                    radius: (GameData.Library.Player && GameData.Library.Player.collision && GameData.Library.Player.collision.size) || this.player.radius || 6
+                    collision: resolveCollisionValue(this.playerCollision || (GameData.Library.Player && GameData.Library.Player.collision), this.player.radius, buildPlayerCollisionTemplate),
+                    radius: (this.playerCollision && this.playerCollision.size) || (GameData.Library.Player && GameData.Library.Player.collision && GameData.Library.Player.collision.size) || this.player.radius || 6
                 };
+            }
+
+            setPlayerCollision(collision) {
+                this.playerCollision = collision ? deepClone(collision) : null;
             }
 
             createBulletFromDef(opts = {}, defOverride = null) {
@@ -1084,6 +1102,7 @@
                 terrainConfig: {},
                 noiseConfig: {},
                 playerConfig: {},
+                playerCollision: null,
                 bulletConfig: {},
                 bulletCollision: {},
                 enemyConfig: {}
@@ -1182,8 +1201,27 @@
                 const collisionEditor = document.getElementById('input-bullet-collision');
                 const status = document.getElementById('bullet-compile-status');
                 const pTxt = document.getElementById('input-player-config');
+                const playerCollisionEditor = document.getElementById('input-player-collision');
+                const enemyPlayerCollisionEditor = document.getElementById('input-player-collision-enemy');
 
                 Object.keys(GameData.Library.Bullets).forEach(k => sel.add(new Option(k, k)));
+
+                const getDefaultPlayerCollision = () => {
+                    const basePlayer = GameData.Library.Player || {};
+                    const radius = (this.state.playerConfig && this.state.playerConfig.radius) || basePlayer.radius || 10;
+                    return resolveCollisionValue(basePlayer.collision, radius, buildPlayerCollisionTemplate);
+                };
+
+                const syncPlayerCollisionEditors = (collisionValue) => {
+                    const value = JSON.stringify(collisionValue || {}, null, 4);
+                    playerCollisionEditor.value = value;
+                    enemyPlayerCollisionEditor.value = value;
+                };
+
+                this.state.playerCollision = deepClone(getDefaultPlayerCollision());
+                syncPlayerCollisionEditors(this.state.playerCollision);
+                this.bulletSim.setPlayerCollision(this.state.playerCollision);
+                this.enemySim.setPlayerCollision(this.state.playerCollision);
 
                 const load = () => {
                     const def = GameData.Library.Bullets[sel.value];
@@ -1219,6 +1257,20 @@
                     try {
                         this.state.playerConfig = JSON.parse(pTxt.value);
                     } catch (e) { }
+
+                    try {
+                        const playerCollisionText = playerCollisionEditor.value.trim();
+                        this.state.playerCollision = playerCollisionText ? JSON.parse(playerCollisionText) : null;
+                        syncPlayerCollisionEditors(this.state.playerCollision || getDefaultPlayerCollision());
+                        this.bulletSim.setPlayerCollision(this.state.playerCollision);
+                        this.enemySim.setPlayerCollision(this.state.playerCollision);
+                    } catch (e) {
+                        status.className = "status-msg status-err";
+                        status.innerText = `Player Collision JSON Error: ${e.message}`;
+                        playerCollisionEditor.classList.add('error');
+                        return;
+                    }
+                    playerCollisionEditor.classList.remove('error');
 
                     const spawnCheck = CodeParser.validate(spawnEditor.value, 'p, t, ctx');
                     if (!spawnCheck.valid) {
@@ -1275,6 +1327,22 @@
                 const cTxt = document.getElementById('input-enemy-config');
                 const aiTxt = document.getElementById('input-enemy-ai');
                 const status = document.getElementById('enemy-compile-status');
+                const playerCollisionEditor = document.getElementById('input-player-collision-enemy');
+                const bulletPlayerCollisionEditor = document.getElementById('input-player-collision');
+
+                const getDefaultPlayerCollision = () => {
+                    const basePlayer = GameData.Library.Player || {};
+                    const radius = (this.state.playerConfig && this.state.playerConfig.radius) || basePlayer.radius || 10;
+                    return resolveCollisionValue(basePlayer.collision, radius, buildPlayerCollisionTemplate);
+                };
+
+                const syncPlayerCollisionEditors = (collisionValue) => {
+                    const value = JSON.stringify(collisionValue || {}, null, 4);
+                    playerCollisionEditor.value = value;
+                    bulletPlayerCollisionEditor.value = value;
+                };
+
+                syncPlayerCollisionEditors(this.state.playerCollision || getDefaultPlayerCollision());
 
                 Object.keys(GameData.Library.Enemies).forEach(k => sel.add(new Option(k, k)));
 
@@ -1290,6 +1358,11 @@
                 const apply = () => {
                     try {
                         this.state.enemyConfig = JSON.parse(cTxt.value);
+                        const playerCollisionText = playerCollisionEditor.value.trim();
+                        this.state.playerCollision = playerCollisionText ? JSON.parse(playerCollisionText) : null;
+                        syncPlayerCollisionEditors(this.state.playerCollision || getDefaultPlayerCollision());
+                        this.bulletSim.setPlayerCollision(this.state.playerCollision);
+                        this.enemySim.setPlayerCollision(this.state.playerCollision);
                         const check = CodeParser.validate(aiTxt.value, 'me, ctx');
                         if (!check.valid) throw new Error(`Syntax Error: ${check.message}`);
 
