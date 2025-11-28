@@ -159,7 +159,7 @@ function spawnPlayer() {
             mask: [GameData.Types.LAYER_E_BULLET, GameData.Types.LAYER_ENEMY, GameData.Types.LAYER_BOSS, GameData.Types.LAYER_ITEM, GameData.Types.LAYER_TERRAIN],
             shape: 'circle',
             size: 4,
-            behavior: { type: GameData.Types.Behaviors.DESTROY }
+            behavior: { type: GameData.Behaviors.DESTROY }
         };
     }
     ENTITIES.push(PLAYER);
@@ -316,10 +316,10 @@ function resolveCollision(a, b) {
     if (!behavior) return;
 
     // 1. Self Behavior
-    if (behavior.type === GameData.Types.Behaviors.DESTROY) {
+    if (behavior.type === GameData.Behaviors.DESTROY) {
         a.active = false;
         spawnParticle(a.world.x, a.world.y, a.color || '#fff');
-    } else if (behavior.type === GameData.Types.Behaviors.PIERCE) {
+    } else if (behavior.type === GameData.Behaviors.PIERCE) {
         if (behavior.pierce > 0) {
             behavior.pierce--;
         } else {
@@ -455,7 +455,7 @@ function updateGame() {
         if (a.collision.mask.includes(GameData.Types.LAYER_TERRAIN)) {
             if (checkCollision(a.world.x, a.world.y)) {
                 // Hit Terrain
-                if (a.collision.behavior.type === GameData.Types.Behaviors.DESTROY) {
+                if (a.collision.behavior.type === GameData.Behaviors.DESTROY) {
                     a.active = false;
                     spawnParticle(a.world.x, a.world.y, '#888', 2);
                 }
@@ -474,7 +474,7 @@ function updateGame() {
                 if (b.type === GameData.Types.BOSS && b.grid) {
                     if (resolveBossHit(b, a)) { // Note: resolveBossHit handles logic internally for now
                         // If hit, apply 'a' behavior
-                        if (a.collision.behavior.type === GameData.Types.Behaviors.DESTROY) {
+                        if (a.collision.behavior.type === GameData.Behaviors.DESTROY) {
                             a.active = false;
                             spawnParticle(a.world.x, a.world.y, '#ff0');
                         }

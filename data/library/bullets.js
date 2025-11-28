@@ -14,7 +14,7 @@
             mask: [GameData.Types.LAYER_PLAYER, GameData.Types.LAYER_TERRAIN],
             shape: 'circle',
             size: 5,
-            behavior: { type: GameData.Types.Behaviors.DESTROY }
+            behavior: { type: GameData.Behaviors.DESTROY }
         },
         behavior: `
             b.x += b.vx;
@@ -33,7 +33,7 @@
             mask: [GameData.Types.LAYER_PLAYER, GameData.Types.LAYER_TERRAIN],
             shape: 'circle',
             size: 5,
-            behavior: { type: GameData.Types.Behaviors.DESTROY }
+            behavior: { type: GameData.Behaviors.DESTROY }
         },
         behavior: `
             b.x += b.vx;
@@ -53,7 +53,7 @@
             mask: [GameData.Types.LAYER_PLAYER, GameData.Types.LAYER_TERRAIN],
             shape: 'rect',
             size: [6, 6],
-            behavior: { type: GameData.Types.Behaviors.DESTROY }
+            behavior: { type: GameData.Behaviors.DESTROY }
         },
         behavior: `
             // Simple Homing Logic
@@ -93,7 +93,7 @@
             mask: [GameData.Types.LAYER_PLAYER, GameData.Types.LAYER_TERRAIN],
             shape: 'rect', // Line approximated as rect for now
             size: [2, 10],
-            behavior: { type: GameData.Types.Behaviors.DESTROY }
+            behavior: { type: GameData.Behaviors.DESTROY }
         },
         behavior: `
             b.x += b.vx;
@@ -113,7 +113,7 @@
             mask: [GameData.Types.LAYER_PLAYER, GameData.Types.LAYER_TERRAIN],
             shape: 'circle',
             size: 6,
-            behavior: { type: GameData.Types.Behaviors.DESTROY }
+            behavior: { type: GameData.Behaviors.DESTROY }
         },
         behavior: `
             b.x += b.vx;
@@ -135,7 +135,7 @@
             mask: [GameData.Types.LAYER_PLAYER, GameData.Types.LAYER_TERRAIN],
             shape: 'rect',
             size: [6, 20],
-            behavior: { type: GameData.Types.Behaviors.PIERCE, pierce: 999 }
+            behavior: { type: GameData.Behaviors.PIERCE, pierce: 999 }
         },
         behavior: `
             b.x += b.vx;
@@ -154,7 +154,7 @@
             mask: [GameData.Types.LAYER_PLAYER, GameData.Types.LAYER_TERRAIN],
             shape: 'circle',
             size: 8,
-            behavior: { type: GameData.Types.Behaviors.DESTROY }
+            behavior: { type: GameData.Behaviors.DESTROY }
         },
         behavior: `
             b.x += b.vx;
@@ -176,7 +176,7 @@
             shape: 'rect',
             size: [4, 16],
             behavior: {
-                type: GameData.Types.Behaviors.DESTROY,
+                type: GameData.Behaviors.DESTROY,
                 onHit: { type: 'damage', value: 1 }
             }
         }
